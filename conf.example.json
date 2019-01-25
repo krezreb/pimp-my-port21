@@ -1,0 +1,13 @@
+{
+"email" : "you@example.com",
+"redirects": 
+    [
+        {
+            "from": "your.awesome.site.com",
+            "to" : "some_other.com"
+        },{
+            "from": "example.com",
+            "to" : "www.example.com"
+        }
+    ]
+}

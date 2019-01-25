@@ -1,0 +1,20 @@
+version : '2'
+
+services:
+        
+    nginx:
+        build: .
+        ports:
+            - "443:443"
+            - "80:80"
+        volumes:
+            - 301hub_sslcerts:/etc/letsencrypt/
+            - 301hub_conf:/etc/301hub/
+        environment:
+            - SETUP_REFRESH_FREQUENCY=3600
+volumes:
+    301hub_sslcerts:
+        external: true
+    301hub_conf:
+        external: true    
+    
