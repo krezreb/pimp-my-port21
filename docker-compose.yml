@@ -2,19 +2,18 @@ version : '2'
 
 services:
         
-    nginx:
+    proftpd:
         build: .
         ports:
-            - "443:443"
-            - "80:80"
+            - "2200:22"
+            - "21:21"
+            - "2000:20"
+            - "8000:80"
         volumes:
-            - 301hub_sslcerts:/etc/letsencrypt/
-            - 301hub_conf:/etc/301hub/
+            - ftpdata:/var/proftpd/home
+            - ./ssl/:/etc/ssl/
         environment:
             - SETUP_REFRESH_FREQUENCY=3600
 volumes:
-    301hub_sslcerts:
-        external: true
-    301hub_conf:
-        external: true    
+    ftpdata:
     

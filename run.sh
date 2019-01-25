@@ -10,7 +10,12 @@ set -u
 
 set -e
 
-setup &
+setup 
 
-echo Starting Nginx 
-nginx -g "daemon off;"
+touch /etc/proftpd/ftpusers
+chmod 600 /etc/proftpd/ftpusers
+
+chmod -R 775 /var/proftpd/home
+
+echo Starting Proftpd
+/usr/sbin/proftpd -n -c /etc/proftpd/proftpd.conf

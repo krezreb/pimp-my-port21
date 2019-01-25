@@ -1,19 +1,25 @@
-FROM alpine
+FROM python:2.7-slim
 
-RUN apk add --no-cache bash certbot python proftpd
+EXPOSE 20 21 22 80
 
-RUN mkdir -p /sslcert
+RUN apt update \
+    && apt install --no-install-recommends -y bash certbot openssl proftpd \
+    && apt clean
 
-RUN rm /etc/proftpd/conf.d/* 
-RUN rm /etc/proftpd/proftpd.conf
+ADD requirements.txt /usr/local/bin/
+
+RUN pip install -r /usr/local/bin/requirements.txt
+
+RUN mkdir -p /sslcert /etc/proftpd/ /var/proftpd/home
 
 ADD proftpd.conf /etc/proftpd/
 
 ADD setup.py /usr/local/bin/setup
+ADD gen_self_signed_cert.sh /usr/local/bin/gen_self_signed_cert
 ADD run.sh /
-RUN chmod +x /usr/local/bin/setup /run.sh
+RUN chmod +x /usr/local/bin/setup /run.sh /usr/local/bin/gen_self_signed_cert
 
-ADD conf.example.json /etc/301hub/
+ADD conf.json /etc/proftpd/
 
 ENV CERTBOT_PORT=80
 ENV SETUP_REFRESH_FREQUENCY=86400
