@@ -1,0 +1,19 @@
+FROM python:2.7-slim
+
+RUN apt update \
+    && apt install --no-install-recommends -y proftpd procps \
+    && apt clean
+
+RUN mkdir -p /sslcert /etc/proftpd/ /var/proftpd/home
+
+ADD proftpd* /etc/proftpd/
+
+ADD run_proftpd.sh /
+RUN chmod +x /run_proftpd.sh
+
+ADD conf.json /etc/proftpd/
+
+ENV SETUP_REFRESH_FREQUENCY=86000
+ENV PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
+
+CMD ["/run_proftpd.sh"]

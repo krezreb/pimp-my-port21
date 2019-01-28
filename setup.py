@@ -9,16 +9,20 @@ from urlparse import urlparse
 from urllib2 import urlopen
 import socket
 import crypt
+import string, random
 
 CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
 CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/conf.json')
 PROFTPD_DEFAULTROOT = os.environ.get('PROFTPD_DEFAULTROOT', '/var/proftpd/home')
-PROFTPD_USERS_FILE = os.environ.get('PROFTPD_USERS_FILE', '/etc/proftpd/ftpusers')
+PROFTPD_FTP_USERS_FILE = os.environ.get('PROFTPD_USERS_FILE', '/var/proftpd/ftpusers')
+PROFTPD_SFTP_USERS_FILE = os.environ.get('PROFTPD_USERS_FILE', '/var/proftpd/sftpusers')
 PROFTPD_CONF_PATH = os.environ.get('PROFTPD_CONF_PATH', '/etc/proftpd/proftpd.conf.d/')
+
+SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', "you@example.com")
+SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
 CERT_PATH = os.environ.get('CERT_PATH', '/etc/letsencrypt/live')
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 22))
 CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
-MY_HOSTNAME=os.environ.get('MY_HOSTNAME', None)
 MY_IP=None
 
 
@@ -78,8 +82,14 @@ def points_to_me(s):
         
     return (success, domain, ip, MY_IP)
 
-def main():
+def genpw(length=32):
+    return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
+
+def make_accounts():
     log("Start")
+    
+    conf_changed = False
+    
     try:
         with open(CONF_PATH, 'r') as f:
             conf = json.load(f)
@@ -89,126 +99,167 @@ def main():
     
     proftpd_reload = False
     
-    with open(PROFTPD_USERS_FILE, "w") as fh:
+    ftpfh  = open(PROFTPD_FTP_USERS_FILE, "w")
+    sftpfh = open(PROFTPD_SFTP_USERS_FILE, "w")
     
-        for u in conf["users"]:
-            
-            # http://www.proftpd.org/docs/howto/AuthFiles.html
-            # username:password:uid:gid:gecos:homedir:shell
-            
-            hash =  crypt.crypt(u['password'], "$1$")
-            home = PROFTPD_DEFAULTROOT+'/'+u['user']
-            fh.write("{}:{}:100:100:ftp user:{}:/bin/false\n".format(u['user'],hash, home))
-            if not os.path.isdir(home):
-                os.mkdir(home)
-            
-            continue
-            cert_file=CERT_PATH+'/'+d['from']+'/cert.pem'
-            (points_to_me_from, domain_from, ip_from, my_ip) = points_to_me(d['from'])
-            (points_to_me_to, domain_to, ip_to, my_ip) = points_to_me(d['to'])
+    #with open(PROFTPD_USERS_FILE, "w") as fh:
     
-            fail = False
-            if ip_from == None:
-                if MY_HOSTNAME != None:
-                    log("DNS ERROR: No DNS entry found for {}.  Create an A record pointing to my ip ({}), or a CNAME pointing to {} then rerun setup".format(domain_from, my_ip, MY_HOSTNAME))
-                else:
-                    log("DNS ERROR: No DNS entry found for {}.  Create an A record pointing to my ip ({}) then rerun setup".format(domain_from, my_ip))
-                    
-                fail = True
-    
-            elif not points_to_me_from:
-                log("DNS ERROR: Cannot request or renew certificate for {}.  It points to {} rather than my ip, which is {}.  Update DNS records and rerun setup".format(domain_from, ip_from, my_ip))
-                fail = True
-    
-            elif points_to_me_to:
-                log("CONFIG ERROR: Cannot forward {} to {} (ip {}).  This is the same as my ip, which would make an infinite loop.".format(domain_from, domain_to, ip_to))
-                fail = True
-                
-            if fail:
-                if os.path.isfile(cert_file):
-                    os.remove(conf_file)
-                    proftpd_reload = True
-                continue
-            
-            if ip_to == None:
-                log("DNS WARNING: No DNS entry found for {}.  Forwarding from {} won't work until a DNS record is created.".format(domain_to, domain_from))
-                
-            if os.path.isfile(cert_file):
-                # cert already exists
-                cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
-                exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
-                
-                expires_in = exp - datetime.datetime.utcnow()
-                
-                if expires_in.days <= 0:
-                    log("Found cert {} EXPIRED".format(d['from']))
-                else:
-                    log("Found cert {}, expires in {} days".format(d['from'], expires_in.days))
+    for u in conf["users"]:
         
-                if expires_in.days < CERT_EXPIRE_CUTOFF_DAYS:
-                    log("Trying to renew cert {}".format(d['from']))
-                    cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port 8086 --agree-tos -d {}".format(d['from'])
-                    (out, err, exitcode) = run(cmd)
+        # http://www.proftpd.org/docs/howto/AuthFiles.html
+        # username:password:uid:gid:gecos:homedir:shell
+        
+        try:
+            password = u['password']
+        except KeyError:
+            password = genpw() # generate a strong password
+            u['password'] = password
+            conf_changed = True
+        
+        hash =  crypt.crypt(password, "$1$")
+        home = PROFTPD_DEFAULTROOT+'/'+u['user']
+        # here we put 0 for uid and gid (root) because we don't care about perms here =) 
+        user_line = "{}:{}:0:0:ftp user:{}:/bin/false\n".format(u['user'],hash, home)
+        
+        
+        try:
+            protocols = u['protocols']
+        except KeyError:
+            protocols = ['sftp']
+            u['protocols'] = protocols
+            conf_changed = True       
+        
+        
+        if 'ftp' in protocols:
+            ftpfh.write(user_line)
+
+        try:
+            keys = u['authorized_keys']
+            keyfile = '/var/proftpd/authorized_keys/{}'.format(u['user'])
+
+            with open(keyfile, "w") as fac:
+                for k in keys:
+                    fac.write("---- BEGIN SSH2 PUBLIC KEY ----\n")
+                    rawkey = k.split(" ")[1]
                     
-                    if exitcode == 0:
-                        log("RENEW SUCCESS: Certificate {} successfully renewed".format(d['from']))
-                        proftpd_reload = True
-    
-                    else:
-                        log("RENEW FAIL: ERROR renewing certificate {}".format(d['from']))
-                        log(out)
-                        log(err)
-                        
-            try:
-                email = d['email']
-            except KeyError:
-                email = conf['email']
-                
-            cmd = 'certbot certonly --verbose --noninteractive --quiet --standalone  --http-01-port {} --agree-tos --email="{}" '.format(CERTBOT_PORT, email)
-            cmd += ' -d "{}"'.format(d['from'])
-    
-            from2 = d['from'].replace('/', '_')
-            proftpd_conf = template(http_port=80, https_port=443, server_name=d['from'], forward_to=d['to'])
+                    line = ""
+                    for ch in rawkey:
+                        line+=ch
+                        if len(line) == 64:
+                            fac.write("{}\n".format(line))
+                            line=""
+                    fac.write("{}\n".format(line))
+                    fac.write("---- END SSH2 PUBLIC KEY ----\n")
+                   
+            if 'sftp' not in protocols:
+                protocols.append('sftp')
+                u['protocols'] = protocols
+                conf_changed = True        
+                         
+        except KeyError:
+            pass
+        
+        if 'sftp' in protocols:
+            sftpfh.write(user_line)
+                    
+        if not os.path.isdir(home):
+            os.mkdir(home)
+        
+        ftpaccess = '{}/.ftpaccess'.format(home)
+        
+        if os.path.isfile(ftpaccess):
+            os.remove(ftpaccess)
+        try:
+            ips = u['authorized_ips']
+            with open(ftpaccess, "w") as fac:
+                fac.write("<Limit LOGIN>\n")
+                for ip in ips:
+                    fac.write("Allow from {}\n".format(ip))
+                fac.write("DenyAll\n</Limit>")
             
-            conf_file = '{}{}'.format(PROFTPD_CONF_PATH, from2)
-            
-            if not os.path.isdir(PROFTPD_CONF_PATH):
-                os.makedirs(PROFTPD_CONF_PATH)
-            
-            # always remove conf file
-            if os.path.isfile(conf_file):
-                os.remove(conf_file)
-            
-            if not os.path.isfile(cert_file):
-                (out, err, exitcode) = run(cmd)
-                
-                if exitcode != 0:
-                    log("Requesting cert for {}: FAILED".format(d['from']))
-                    log(cmd)
-                    log(err)
-                else:
-                    log("Requesting cert for {}: SUCCESS".format(d['from']))
-                    # write conf
-                    with open(conf_file, 'w') as f:
-                        f.write(proftpd_conf)
-                        log("Configured forwarding {} => {}".format(d['from'], d['to']))
-                        proftpd_reload = True
-            else:
-                # write conf
-                with open(conf_file, 'w') as f:
-                    f.write(proftpd_conf)
-                    log("Configured forwarding {} => {}".format(d['from'], d['to']))
-                    proftpd_reload = True
+        except KeyError:
+            pass
+        
+        
+        
+    ftpfh.close()
+    sftpfh.close()
     
     if proftpd_reload:
-        log("Reloading proftpd")
-        reload()
+        pass
             
+    if conf_changed:
+        with open(CONF_PATH, 'w') as fh:
+            json.dump(conf, fh, indent=4)
+
     log("Done")
     
+
+def get_ssl_cert():
     
-def reload():
-    (out, err, exitcode) = run("kill -HUP $(pgrep proftpd)")
+    cert_file=CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
+    
+    (success, domain, ip, MY_IP) = points_to_me(SSL_CERT_FQDN)
 
+    if not success:
+        if ip != MY_IP:
+            log("DNS ERROR: Cannot request or renew certificate for {}.  It points to {} rather than my ip, which is {}.  Update DNS records and rerun setup".format(domain_from, ip_from, my_ip))
+        elif SSL_CERT_FQDN != None:
+            log("DNS ERROR: No DNS entry found for {}.  Create an A record pointing to my ip ({}), or a CNAME pointing to {} then rerun setup"
+                .format(SSL_CERT_FQDN, MY_IP, SSL_CERT_FQDN))
+        else:
+            log("DNS ERROR: SSL_CERT_FQDN env var not set.")
+            
+        return
 
-main()
+    if os.path.isfile(cert_file):
+        # cert already exists
+        cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
+        exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
+        
+        expires_in = exp - datetime.datetime.utcnow()
+        
+        if expires_in.days <= 0:
+            log("Found cert {} EXPIRED".format(SSL_CERT_FQDN))
+        else:
+            log("Found cert {}, expires in {} days".format(SSL_CERT_FQDN, expires_in.days))
+
+        if expires_in.days < CERT_EXPIRE_CUTOFF_DAYS:
+            log("Trying to renew cert {}".format(d['from']))
+            cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port {} --agree-tos -d {}".format(CERTBOT_PORT, SSL_CERT_FQDN)
+            (out, err, exitcode) = run(cmd)
+            
+            if exitcode == 0:
+                log("RENEW SUCCESS: Certificate {} successfully renewed".format(d['from']))
+
+            else:
+                log("RENEW FAIL: ERROR renewing certificate {}".format(d['from']))
+                log(out)
+                log(err)
+                
+        
+    cmd = 'certbot certonly --verbose --noninteractive --quiet --standalone  --http-01-port {} --agree-tos --email="{}" '.format(CERTBOT_PORT, SSL_CERT_EMAIL)
+    cmd += ' -d "{}"'.format(SSL_CERT_FQDN)
+
+    
+    if not os.path.isfile(cert_file):
+        (out, err, exitcode) = run(cmd)
+        
+        if exitcode != 0:
+            log("Requesting cert for {}: FAILED".format(d['from']))
+            log(cmd)
+            log(err)
+        else:
+            log("Requesting cert for {}: SUCCESS".format(d['from']))
+            # write conf
+            with open(conf_file, 'w') as f:
+                log("Configured forwarding {} => {}".format(d['from'], d['to']))
+    else:
+        # write conf
+        with open(conf_file, 'w') as f:
+            f.write(proftpd_conf)
+            log("Configured forwarding {} => {}".format(d['from'], d['to']))
+    
+    
+get_ssl_cert()
+make_accounts()

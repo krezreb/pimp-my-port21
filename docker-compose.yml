@@ -2,18 +2,43 @@ version : '2'
 
 services:
         
-    proftpd:
-        build: .
-        ports:
-            - "2200:22"
-            - "21:21"
-            - "2000:20"
-            - "8000:80"
+    admin:
+        build: 
+            context: .
+            dockerfile: Dockerfile-admin
         volumes:
-            - ftpdata:/var/proftpd/home
+            - ftpdata:/var/proftpd/
+            - ./conf.json:/etc/proftpd/conf.json
+            
+    proftpd_ftps:
+        depends_on:
+            - admin
+        build: 
+            context: .
+            dockerfile: Dockerfile-proftpd
+        ports:
+            - "21:21"
+        volumes:
+            - ftpdata:/var/proftpd/
             - ./ssl/:/etc/ssl/
         environment:
             - SETUP_REFRESH_FREQUENCY=3600
+            - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
+            
+    proftpd_sftp:
+        depends_on:
+            - admin
+        build: 
+            context: .
+            dockerfile: Dockerfile-proftpd
+        ports:
+            - "2200:22"
+        volumes:
+            - ftpdata:/var/proftpd/
+            - ./ssl/:/etc/ssl/
+        environment:
+            - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_sftp.conf
+            
 volumes:
     ftpdata:
     
