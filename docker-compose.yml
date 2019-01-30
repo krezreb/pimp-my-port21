@@ -7,38 +7,39 @@ services:
             context: .
             dockerfile: Dockerfile-admin
         volumes:
-            - ftpdata:/var/proftpd/
+            - ftpusers:/var/ftpusers/
+            - rsakeys:/etc/pure-ftpd/authorized_keys
             - ./conf.json:/etc/proftpd/conf.json
-            
-    proftpd_ftps:
-        depends_on:
-            - admin
-        build: 
-            context: .
-            dockerfile: Dockerfile-proftpd
+        environment:
+            - FTP_USERS_FILE=/var/ftpusers/pureftp.passwd
+            - SFTP_USERS_FILE=/var/ftpusers/sftpusers
+            - FTP_HOME_PATH=/home/ftpusers
+            - USER_KEYS_PATH=
+                        
+    ftps:
+        image: stilliard/pure-ftpd:hardened
+        links:
+            - admin 
         ports:
             - "21:21"
-        volumes:
-            - ftpdata:/var/proftpd/
-            - ./ssl/:/etc/ssl/
+            - "30000-30099:30000-30099"
+      
+        volumes: # remember to replace /folder_on_disk/ with the path to where you want to store the files on the host machine
+            - ftphomes:/home/ftpusers
+            - ftpusers:/etc/pure-ftpd/passwd
+            - rsakeys:/etc/pure-ftpd/authorized_keys
+      
+        #depends_on:
+        #    - admin
         environment:
-            - SETUP_REFRESH_FREQUENCY=3600
-            - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
+            - FTP_PASSIVE_PORTS=30000:30099
+            - FTP_MAX_CLIENTS=50
+            - FTP_MAX_CONNECTIONS=50
+            - PURE_PASSWDFILE=/etc/pure-ftpd/passwd/pureftp.passwd
             
-    proftpd_sftp:
-        depends_on:
-            - admin
-        build: 
-            context: .
-            dockerfile: Dockerfile-proftpd
-        ports:
-            - "2200:22"
-        volumes:
-            - ftpdata:/var/proftpd/
-            - ./ssl/:/etc/ssl/
-        environment:
-            - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_sftp.conf
             
 volumes:
-    ftpdata:
+    ftphomes:
+    ftpusers:
+    rsakeys:
     

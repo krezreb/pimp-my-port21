@@ -5,8 +5,6 @@ trap "kill -9 0" EXIT
 
 set -ue
 
-
-
 setup 
 
 # regularly rerun setup

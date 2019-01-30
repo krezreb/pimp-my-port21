@@ -13,10 +13,11 @@ import string, random
 
 CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
 CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/conf.json')
-PROFTPD_DEFAULTROOT = os.environ.get('PROFTPD_DEFAULTROOT', '/var/proftpd/home')
-PROFTPD_FTP_USERS_FILE = os.environ.get('PROFTPD_USERS_FILE', '/var/proftpd/ftpusers')
-PROFTPD_SFTP_USERS_FILE = os.environ.get('PROFTPD_USERS_FILE', '/var/proftpd/sftpusers')
-PROFTPD_CONF_PATH = os.environ.get('PROFTPD_CONF_PATH', '/etc/proftpd/proftpd.conf.d/')
+FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
+FTP_USERS_FILE = os.environ.get('FTP_USERS_FILE', '/var/proftpd/ftpusers')
+SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
+USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys')
+
 
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', "you@example.com")
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
@@ -99,8 +100,8 @@ def make_accounts():
     
     proftpd_reload = False
     
-    ftpfh  = open(PROFTPD_FTP_USERS_FILE, "w")
-    sftpfh = open(PROFTPD_SFTP_USERS_FILE, "w")
+    ftpfh  = open(FTP_USERS_FILE, "w")
+    sftpfh = open(SFTP_USERS_FILE, "w")
     
     #with open(PROFTPD_USERS_FILE, "w") as fh:
     
@@ -116,10 +117,10 @@ def make_accounts():
             u['password'] = password
             conf_changed = True
         
-        hash =  crypt.crypt(password, "$1$")
-        home = PROFTPD_DEFAULTROOT+'/'+u['user']
+        hash =  crypt.crypt(password, "$6${}".format(genpw(16)))
+        home = FTP_HOME_PATH+'/'+u['user']
         # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-        user_line = "{}:{}:0:0:ftp user:{}:/bin/false\n".format(u['user'],hash, home)
+        user_line = "{}:{}/./:1000:1000::{}::::::::::::\n".format(u['user'],hash, home)
         
         
         try:
@@ -135,7 +136,7 @@ def make_accounts():
 
         try:
             keys = u['authorized_keys']
-            keyfile = '/var/proftpd/authorized_keys/{}'.format(u['user'])
+            keyfile = '{}/{}'.format(USER_KEYS_PATH, u['user'])
 
             with open(keyfile, "w") as fac:
                 for k in keys:
@@ -163,7 +164,7 @@ def make_accounts():
             sftpfh.write(user_line)
                     
         if not os.path.isdir(home):
-            os.mkdir(home)
+            os.makedirs(home)
         
         ftpaccess = '{}/.ftpaccess'.format(home)
         
@@ -197,69 +198,76 @@ def make_accounts():
 
 def get_ssl_cert():
     
-    cert_file=CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
+    if SSL_CERT_FQDN != None:
     
-    (success, domain, ip, MY_IP) = points_to_me(SSL_CERT_FQDN)
-
-    if not success:
-        if ip != MY_IP:
-            log("DNS ERROR: Cannot request or renew certificate for {}.  It points to {} rather than my ip, which is {}.  Update DNS records and rerun setup".format(domain_from, ip_from, my_ip))
-        elif SSL_CERT_FQDN != None:
-            log("DNS ERROR: No DNS entry found for {}.  Create an A record pointing to my ip ({}), or a CNAME pointing to {} then rerun setup"
-                .format(SSL_CERT_FQDN, MY_IP, SSL_CERT_FQDN))
-        else:
-            log("DNS ERROR: SSL_CERT_FQDN env var not set.")
+        cert_file=CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
+        
+        (success, domain, ip, MY_IP) = points_to_me(SSL_CERT_FQDN)
+    
+        if not success:
+            if ip != MY_IP:
+                log("DNS ERROR: Cannot request or renew certificate for {}.  It points to {} rather than my ip, which is {}.  Update DNS records and rerun setup".format(domain_from, ip_from, my_ip))
+            elif SSL_CERT_FQDN != None:
+                log("DNS ERROR: No DNS entry found for {}.  Create an A record pointing to my ip ({}), or a CNAME pointing to {} then rerun setup"
+                    .format(SSL_CERT_FQDN, MY_IP, SSL_CERT_FQDN))
+            else:
+                log("DNS ERROR: SSL_CERT_FQDN env var not set.")
+                
+            return
+    
+        if os.path.isfile(cert_file):
+            # cert already exists
+            cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
+            exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
             
-        return
-
-    if os.path.isfile(cert_file):
-        # cert already exists
-        cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
-        exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
+            expires_in = exp - datetime.datetime.utcnow()
+            
+            if expires_in.days <= 0:
+                log("Found cert {} EXPIRED".format(SSL_CERT_FQDN))
+            else:
+                log("Found cert {}, expires in {} days".format(SSL_CERT_FQDN, expires_in.days))
+    
+            if expires_in.days < CERT_EXPIRE_CUTOFF_DAYS:
+                log("Trying to renew cert {}".format(d['from']))
+                cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port {} --agree-tos -d {}".format(CERTBOT_PORT, SSL_CERT_FQDN)
+                (out, err, exitcode) = run(cmd)
+                
+                if exitcode == 0:
+                    log("RENEW SUCCESS: Certificate {} successfully renewed".format(d['from']))
+    
+                else:
+                    log("RENEW FAIL: ERROR renewing certificate {}".format(d['from']))
+                    log(out)
+                    log(err)
+                    
+            
+        cmd = 'certbot certonly --verbose --noninteractive --quiet --standalone  --http-01-port {} --agree-tos --email="{}" '.format(CERTBOT_PORT, SSL_CERT_EMAIL)
+        cmd += ' -d "{}"'.format(SSL_CERT_FQDN)
+    
         
-        expires_in = exp - datetime.datetime.utcnow()
-        
-        if expires_in.days <= 0:
-            log("Found cert {} EXPIRED".format(SSL_CERT_FQDN))
-        else:
-            log("Found cert {}, expires in {} days".format(SSL_CERT_FQDN, expires_in.days))
-
-        if expires_in.days < CERT_EXPIRE_CUTOFF_DAYS:
-            log("Trying to renew cert {}".format(d['from']))
-            cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port {} --agree-tos -d {}".format(CERTBOT_PORT, SSL_CERT_FQDN)
+        if not os.path.isfile(cert_file):
             (out, err, exitcode) = run(cmd)
             
-            if exitcode == 0:
-                log("RENEW SUCCESS: Certificate {} successfully renewed".format(d['from']))
-
-            else:
-                log("RENEW FAIL: ERROR renewing certificate {}".format(d['from']))
-                log(out)
+            if exitcode != 0:
+                log("Requesting cert for {}: FAILED".format(d['from']))
+                log(cmd)
                 log(err)
-                
-        
-    cmd = 'certbot certonly --verbose --noninteractive --quiet --standalone  --http-01-port {} --agree-tos --email="{}" '.format(CERTBOT_PORT, SSL_CERT_EMAIL)
-    cmd += ' -d "{}"'.format(SSL_CERT_FQDN)
-
-    
-    if not os.path.isfile(cert_file):
-        (out, err, exitcode) = run(cmd)
-        
-        if exitcode != 0:
-            log("Requesting cert for {}: FAILED".format(d['from']))
-            log(cmd)
-            log(err)
+            else:
+                log("Requesting cert for {}: SUCCESS".format(d['from']))
+                # write conf
+                with open(conf_file, 'w') as f:
+                    log("Configured forwarding {} => {}".format(d['from'], d['to']))
         else:
-            log("Requesting cert for {}: SUCCESS".format(d['from']))
             # write conf
             with open(conf_file, 'w') as f:
+                f.write(proftpd_conf)
                 log("Configured forwarding {} => {}".format(d['from'], d['to']))
-    else:
-        # write conf
-        with open(conf_file, 'w') as f:
-            f.write(proftpd_conf)
-            log("Configured forwarding {} => {}".format(d['from'], d['to']))
+    
+def set_permissions():
+    run("chown -R ftpuser:ftpgroup {}".format(FTP_HOME_PATH))
+    run("chmod -R 775 {}".format(FTP_HOME_PATH))
     
     
 get_ssl_cert()
 make_accounts()
+set_permissions()
