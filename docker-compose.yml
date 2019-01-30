@@ -15,9 +15,10 @@ services:
             - admin
         build: 
             context: .
-            dockerfile: Dockerfile-proftpd
+            dockerfile: Dockerfile-proftpd-alpine-source
         ports:
             - "21:21"
+            - "30000-30099:30000-30099" # passive ports
         volumes:
             - ftpdata:/var/proftpd/
             - ./ssl/:/etc/ssl/
@@ -30,7 +31,7 @@ services:
             - admin
         build: 
             context: .
-            dockerfile: Dockerfile-proftpd
+            dockerfile: Dockerfile-proftpd-alpine-source
         ports:
             - "2200:22"
         volumes:

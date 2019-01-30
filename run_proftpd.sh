@@ -17,4 +17,4 @@ chmod -R 700 /var/proftpd/home
 # regularly refresh proftpd to grab any new ssl cert changes
 (while true ; do sleep $SETUP_REFRESH_FREQUENCY ; kill -HUP $(pgrep proftpd) ; done) &
 
-/usr/sbin/proftpd -n -c ${PROFTPD_CONF_FILE}
+/usr/local/sbin/proftpd -n -c ${PROFTPD_CONF_FILE}
