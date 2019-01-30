@@ -8,9 +8,10 @@ services:
             dockerfile: Dockerfile-admin
         volumes:
             - ftpdata:/var/proftpd/
-            - ./conf.json:/etc/proftpd/conf.json
+            - ftplimits:/etc/proftpd/conf.d
+            - ./conf.yml:/etc/proftpd/conf.yml
             
-    proftpd_ftps:
+    ftps:
         depends_on:
             - admin
         build: 
@@ -21,12 +22,14 @@ services:
             - "30000-30099:30000-30099" # passive ports
         volumes:
             - ftpdata:/var/proftpd/
+            - ftplimits:/etc/proftpd/conf.d
             - ./ssl/:/etc/ssl/
         environment:
             - SETUP_REFRESH_FREQUENCY=3600
             - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
+            - FTPS_REQUIRED=FALSE
             
-    proftpd_sftp:
+    sftp:
         depends_on:
             - admin
         build: 
@@ -36,10 +39,12 @@ services:
             - "2200:22"
         volumes:
             - ftpdata:/var/proftpd/
+            - ftplimits:/etc/proftpd/conf.d
             - ./ssl/:/etc/ssl/
         environment:
             - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_sftp.conf
             
 volumes:
     ftpdata:
+    ftplimits:
     

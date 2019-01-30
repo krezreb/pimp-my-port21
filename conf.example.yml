@@ -1,0 +1,25 @@
+
+user_prefix: example
+
+users:
+
+    # bob can connect using only sftp with his private key
+    bob:
+        authorized_keys: 
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbdyOgGpBuoAhwtOhw9Te/+lGpZVQnY8JFMZOEbB1bw1Pg+Zx/Gt5JjdWq5RxNRI3zoxOROxSupIauyHvSponA2w7M3H+l4CojbaBGfK+q0dtwaTrGmSjghbObv75PNjw7v+0QqYnwK4W1W+7sOlC1rK+qGm/LgKqctjZzhJ411ptF7QLHaYVEMnvkUbw3QS0tFOkYiBKGLDABOvMDgW84/r75l/SnvPb/DDolmc0tFKTy49X3gjDPKXAqwisVwtwXdrXx3t8KmK+xMz2wonH2eZ1kur2FuEnQavWCbP+ulBNshkxuJHP8XudtYu70BTzQG+bk3PUgpAXjt/2Gldb/ 
+        
+    # alice can connect using ftp or ftps with her password
+    # but only from ip 1.2.3.4
+    alice:
+        authorized_ips:
+            - 1.2.3.4/32
+
+    # joey can connect using sftp with his private key
+    # OR via ftp using his password
+    joey:
+        authorized_keys: 
+            - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDbdyOgGpBuoAhwtOhw9Te/+lGpZVQnY8JFMZOEbB1bw1Pg+Zx/Gt5JjdWq5RxNRI3zoxOROxSupIauyHvSponA2w7M3H+l4CojbaBGfK+q0dtwaTrGmSjghbObv75PNjw7v+0QqYnwK4W1W+7sOlC1rK+qGm/LgKqctjZzhJ411ptF7QLHaYVEMnvkUbw3QS0tFOkYiBKGLDABOvMDgW84/r75l/SnvPb/DDolmc0tFKTy49X3gjDPKXAqwisVwtwXdrXx3t8KmK+xMz2wonH2eZ1kur2FuEnQavWCbP+ulBNshkxuJHP8XudtYu70BTzQG+bk3PUgpAXjt/2Gldb/ 
+        # here we explicitly define both ftp and sftp as allowed protocols
+        protocols: 
+            - sftp
+            - ftp

@@ -1,4 +1,42 @@
-FROM thomsch98/proftpd
+FROM alpine:3.6
+
+ENV TERM=xterm
+
+ENV PROFTPD_VERSION 1.3.6
+
+ENV PROFTPD_DEPS \
+    g++ \
+    gcc \
+    libc-dev \
+    make \
+    libressl-dev \
+    gettext \
+    zlib-dev
+
+RUN set -x \
+    && apk add --no-cache --virtual .persistent-deps \
+    ca-certificates \
+    curl \
+    && apk add --no-cache --virtual .build-deps \
+    $PROFTPD_DEPS \
+    && curl -fSL ftp://ftp.proftpd.org/distrib/source/proftpd-${PROFTPD_VERSION}.tar.gz -o proftpd.tgz \
+    && tar -xf proftpd.tgz \
+    && rm proftpd.tgz \
+    && mkdir -p /usr/local \
+    && mv proftpd-${PROFTPD_VERSION} /usr/local/proftpd \
+    && cd /usr/local/proftpd \
+    && sed -i 's/__mempcpy/mempcpy/g' lib/pr_fnmatch.c \
+    && ./configure \
+    --enable-ctrls --enable-openssl --enable-quotatab --enable-nls \
+    --with-modules=mod_tls:mod_quotatab:mod_quotatab_file:mod_ifsession:mod_ctrls_admin:mod_ban:mod_readme:mod_sftp:mod_ifsession --enable-nls \
+    && make \
+    && cd /usr/local/proftpd && make install \
+    && make clean \
+    && rm -rf /usr/local/proftpd \
+    && apk del .build-deps \
+    && rm -rf /var/cache/apk/*
+
+
 
 RUN apk update && apk add bash
 
@@ -9,9 +47,10 @@ ADD proftpd* /etc/proftpd/
 ADD run_proftpd.sh /
 RUN chmod +x /run_proftpd.sh
 
-ADD conf.json /etc/proftpd/
+RUN mkdir -p /etc/proftpd/conf.d
 
-ENV SETUP_REFRESH_FREQUENCY=86000
+ENV PROFTPD_REFRESH_FREQUENCY=600
 ENV PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
+ENV FTPS_REQUIRED=TRUE
 
 CMD ["/run_proftpd.sh"]

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-import json, os
+import os, json
+import yaml_ordered as yo
 from subprocess import Popen, PIPE
 from OpenSSL import crypto
 import datetime
@@ -12,13 +13,14 @@ import crypt
 import string, random
 
 CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
-CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/conf.json')
+CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
 FTP_USERS_FILE = os.environ.get('FTP_USERS_FILE', '/var/proftpd/ftpusers')
 SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
 USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys')
+PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwords')
 
-
+PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', "you@example.com")
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
 CERT_PATH = os.environ.get('CERT_PATH', '/etc/letsencrypt/live')
@@ -86,14 +88,31 @@ def points_to_me(s):
 def genpw(length=32):
     return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
 
+def get_password(username):
+    
+    if not os.path.isdir(PASSWORD_STORE_PATH):
+        os.makedirs(PASSWORD_STORE_PATH)
+        
+    password_file = "{}/{}".format(PASSWORD_STORE_PATH, username)
+    
+    if not os.path.isfile(password_file):
+        password = genpw()
+        
+        with open(password_file, 'w') as fh:
+            json.dump(password, fh)
+            
+    else:
+        with open(password_file, 'r') as fh:
+            password = json.load(fh)
+        
+    return password
+    
+
 def make_accounts():
     log("Start")
     
-    conf_changed = False
-    
     try:
-        with open(CONF_PATH, 'r') as f:
-            conf = json.load(f)
+        conf = yo.load(CONF_PATH+'/conf.yml')
     except IOError:
         log("ERROR: No config file found at {}, quitting".format(CONF_PATH))
         exit(-1)
@@ -105,86 +124,97 @@ def make_accounts():
     
     #with open(PROFTPD_USERS_FILE, "w") as fh:
     
-    for u in conf["users"]:
+    for raw_username, u in conf["users"].items():
+        
+        try:
+            prefix = conf['user_prefix']
+            if len(prefix) > 0:
+                username = "{}_{}".format(prefix, raw_username)
+        except KeyError:
+            username = raw_username
         
         # http://www.proftpd.org/docs/howto/AuthFiles.html
         # username:password:uid:gid:gecos:homedir:shell
         
-        try:
-            password = u['password']
-        except KeyError:
-            password = genpw() # generate a strong password
-            u['password'] = password
-            conf_changed = True
+        password = get_password(username)
         
-        hash =  crypt.crypt(password, "$1$")
-        home = FTP_HOME_PATH+'/'+u['user']
+        if len(password) < PASSWORD_MIN_LENGTH:
+            log("Password provided for user {} is less than the minimum {} characters, skipping".format(username, PASSWORD_MIN_LENGTH))
+            continue
+        
+        
+        hash =  crypt.crypt(password, "$1${}".format(genpw(16)))
+        home = FTP_HOME_PATH+'/'+username
         # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-        user_line = "{}:{}:0:0::{}:/bin/false\n".format(u['user'],hash, home)
+        user_line = "{}:{}:0:0::{}:/bin/false\n".format(username,hash, home)
         
-        
-        try:
-            protocols = u['protocols']
-        except KeyError:
-            protocols = ['sftp']
-            u['protocols'] = protocols
-            conf_changed = True       
-        
-        
-        if 'ftp' in protocols:
-            ftpfh.write(user_line)
-
-        try:
-            keys = u['authorized_keys']
-            keyfile = '{}/{}'.format(USER_KEYS_PATH, u['user'])
-
-            if not os.path.isdir(USER_KEYS_PATH):
-                os.makedirs(USER_KEYS_PATH)
-                
-            with open(keyfile, "w") as fac:
-                for k in keys:
-                    fac.write("---- BEGIN SSH2 PUBLIC KEY ----\n")
-                    rawkey = k.split(" ")[1]
+        protocols = []
+        if u != None:
+            try:
+                protocols = u['protocols']
+            except KeyError:
+                pass
+            
+        if u != None:
+            try:
+                keys = u['authorized_keys']
+                keyfile = '{}/{}'.format(USER_KEYS_PATH, username)
+    
+                if not os.path.isdir(USER_KEYS_PATH):
+                    os.makedirs(USER_KEYS_PATH)
                     
-                    line = ""
-                    for ch in rawkey:
-                        line+=ch
-                        if len(line) == 64:
-                            fac.write("{}\n".format(line))
-                            line=""
-                    fac.write("{}\n".format(line))
-                    fac.write("---- END SSH2 PUBLIC KEY ----\n")
-                   
-            if 'sftp' not in protocols:
+                with open(keyfile, "w") as fac:
+                    for k in keys:
+                        fac.write("---- BEGIN SSH2 PUBLIC KEY ----\n")
+                        rawkey = k.split(" ")[1]
+                        
+                        line = ""
+                        for ch in rawkey:
+                            line+=ch
+                            if len(line) == 64:
+                                fac.write("{}\n".format(line))
+                                line=""
+                        fac.write("{}\n".format(line))
+                        fac.write("---- END SSH2 PUBLIC KEY ----\n")
+                       
                 protocols.append('sftp')
-                u['protocols'] = protocols
-                conf_changed = True        
-                         
-        except KeyError:
-            pass
+                             
+            except KeyError:
+                protocols.append('ftp') # no rsa key set so ftp
+                pass
+        else:
+            protocols.append('ftp') # no rsa key set so ftp
+            
         
         if 'sftp' in protocols:
+            log("Authing user {} for sftp using their key(s)".format(username))
             sftpfh.write(user_line)
+            
+        if 'ftp' in protocols:
+            log("Authing user {} for ftp using their password".format(username))
+            ftpfh.write(user_line)
+            
                     
         if not os.path.isdir(home):
             os.makedirs(home)
         
-        ftpaccess = '{}/.ftpaccess'.format(home)
+        limits_conf_file = '{}/conf.d/{}.conf'.format(CONF_PATH, username)
+        #limits_conf_file = '{}/.limits_conf_file'.format(FTP_HOME_PATH)
         
-        if os.path.isfile(ftpaccess):
-            os.remove(ftpaccess)
-        try:
-            ips = u['authorized_ips']
-            with open(ftpaccess, "w") as fac:
-                fac.write("<Limit LOGIN>\n")
-                for ip in ips:
-                    fac.write("Allow from {}\n".format(ip))
-                fac.write("DenyAll\n</Limit>")
+        if os.path.isfile(limits_conf_file):
+            os.remove(limits_conf_file)
             
-        except KeyError:
-            pass
-        
-        
+        if u != None:
+            try:
+                ips = u['authorized_ips']
+                with open(limits_conf_file, "w") as fac:
+                    fac.write("<IfUser {}>\n<Limit LOGIN>\n".format(username))
+                    for ip in ips:
+                        fac.write("Allow from {}\n".format(ip))
+                    fac.write("DenyAll\n</Limit>\n</IfUser>\n")
+                
+            except KeyError:
+                pass
         
     ftpfh.close()
     sftpfh.close()
@@ -192,9 +222,6 @@ def make_accounts():
     if proftpd_reload:
         pass
             
-    if conf_changed:
-        with open(CONF_PATH, 'w') as fh:
-            json.dump(conf, fh, indent=4)
 
     log("Done")
     
