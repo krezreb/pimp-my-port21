@@ -10,11 +10,11 @@ RUN pip install -r /usr/local/bin/requirements.txt
 
 ADD *.py /usr/local/bin/
 ADD setup.py /usr/local/bin/setup
-ADD gen_self_signed_cert.sh /usr/local/bin/gen_self_signed_cert
 ADD run_admin.sh /run.sh
-RUN chmod +x /usr/local/bin/setup /run.sh /usr/local/bin/gen_self_signed_cert
+RUN chmod +x /usr/local/bin/setup /run.sh
 
 ENV CERTBOT_PORT=80
 ENV SETUP_REFRESH_FREQUENCY=86400
+ENV SSL_CERT_PATH=/var/ssl
 
 CMD ["/run.sh"]

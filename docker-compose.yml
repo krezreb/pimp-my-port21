@@ -5,12 +5,16 @@ services:
     admin:
         build: 
             context: .
-            dockerfile: Dockerfile-admin
+            dockerfile: Dockerfile-admin-aws
         volumes:
             - ftpdata:/var/proftpd/
             - ftplimits:/etc/proftpd/conf.d
-            - ./conf.yml:/etc/proftpd/conf.yml
-            
+            - ./conf.yml:/users/conf.yml
+            - ./ssl/:/var/ssl/
+        environment:
+            - SETUP_REFRESH_FREQUENCY=3600
+            - USER_CONF_ROOT=/users
+            - CERT_PATH=/var/ssl/     
     ftps:
         depends_on:
             - admin
@@ -23,7 +27,7 @@ services:
         volumes:
             - ftpdata:/var/proftpd/
             - ftplimits:/etc/proftpd/conf.d
-            - ./ssl/:/etc/ssl/
+            - ./ssl/:/var/ssl/
         environment:
             - SETUP_REFRESH_FREQUENCY=3600
             - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
@@ -40,7 +44,7 @@ services:
         volumes:
             - ftpdata:/var/proftpd/
             - ftplimits:/etc/proftpd/conf.d
-            - ./ssl/:/etc/ssl/
+            - ./ssl/:/var/ssl/
         environment:
             - PROFTPD_CONF_FILE=/etc/proftpd/proftpd_sftp.conf
             

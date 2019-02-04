@@ -28,7 +28,7 @@ RUN set -x \
     && sed -i 's/__mempcpy/mempcpy/g' lib/pr_fnmatch.c \
     && ./configure \
     --enable-ctrls --enable-openssl --enable-quotatab --enable-nls \
-    --with-modules=mod_tls:mod_quotatab:mod_quotatab_file:mod_ifsession:mod_ctrls_admin:mod_ban:mod_readme:mod_sftp:mod_ifsession --enable-nls \
+    --with-modules=mod_tls:mod_quotatab:mod_quotatab_file:mod_ifsession:mod_ban:mod_sftp --enable-nls \
     && make \
     && cd /usr/local/proftpd && make install \
     && make clean \
@@ -49,7 +49,11 @@ RUN chmod +x /run_proftpd.sh
 
 RUN mkdir -p /etc/proftpd/conf.d
 
+ENV FTP_PORT=21
 ENV PROFTPD_REFRESH_FREQUENCY=600
+ENV PASSIVE_PORTS_FROM=30000
+ENV SSL_CERT_PATH=/var/ssl
+ENV PASSIVE_PORTS_TO=30099
 ENV PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
 ENV FTPS_REQUIRED=TRUE
 
