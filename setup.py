@@ -13,14 +13,13 @@ import crypt
 import string, random
 
 CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
-USER_CONF_ROOT=os.environ.get('USER_CONF_ROOT', None)
+USER_CONF_PATH=os.environ.get('USER_CONF_PATH', None)
 CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
 FTP_USERS_FILE = os.environ.get('FTP_USERS_FILE', '/var/proftpd/ftpusers')
 SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
 USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys')
 PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwords')
-
 PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', None)
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
@@ -28,7 +27,6 @@ SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/etc/letsencrypt/live')
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
 CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
 MY_IP=None
-
 
 def run(cmd, splitlines=False):
     # you had better escape cmd cause it's goin to the shell as is
@@ -129,8 +127,7 @@ class Setup(object):
         self.limitsconf.append("<IfUser regex _ro$>\n<Limit WRITE>\nDenyAll\n</Limit>\n</IfUser>\n")
         
         if not os.path.isdir(user_conf_path):
-            log("ERROR: User config dir {} does not exist, quitting".format(user_conf_path))
-            return (change, False)
+            raise Exception("ERROR: User config dir {} does not exist, quitting".format(user_conf_path))
         
         for root, dirs, files in os.walk(user_conf_path):
             for file in files:
@@ -248,9 +245,13 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
     change = False
     fail = False
     
+    log('get_le_cert()')
+    
     cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port {} --agree-tos -d {}".format(certbot_port, fqdn)
     
     if os.path.isfile(cert_file):
+        log('cert_file {} found'.format(cert_file))
+        
         # cert already exists
         cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
         exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
@@ -276,6 +277,8 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
                 log(err)
                 fail = True
     else :
+        log('cert_file {} not found'.format(cert_file))
+
         cmd += ' --email="{}" '.format(cert_email)
         (out, err, exitcode) = run(cmd)
         
@@ -290,6 +293,8 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
             change = True
     
     return (change, fail)
+    
+    
     
 if SSL_CERT_FQDN != None:
     cert_file=SSL_CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
@@ -307,17 +312,18 @@ elif not os.path.isfile(SSL_CERT_PATH+'/domain/cert.pem'):
     cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
     run(cmd)
     
-s = Setup()
-s.make_accounts(user_conf_path=USER_CONF_ROOT)
-
-with open(FTP_USERS_FILE, "w") as fh:
-    fh.write("\n".join(s.ftp_users))
+if USER_CONF_PATH != None and os.path.isdir(USER_CONF_PATH):
+    s = Setup()
+    s.make_accounts(user_conf_path=USER_CONF_PATH)
     
-with open(SFTP_USERS_FILE, "w") as fh:
-    fh.write("\n".join(s.sftp_users))
-    
-limits_file = '{}/conf.d/limits.conf'.format(CONF_PATH)
-with open(limits_file, "w") as fh:
-    fh.write("\n".join(s.limitsconf))
+    with open(FTP_USERS_FILE, "w") as fh:
+        fh.write("\n".join(s.ftp_users))
+        
+    with open(SFTP_USERS_FILE, "w") as fh:
+        fh.write("\n".join(s.sftp_users))
+        
+    limits_file = '{}/conf.d/limits.conf'.format(CONF_PATH)
+    with open(limits_file, "w") as fh:
+        fh.write("\n".join(s.limitsconf))
           
         

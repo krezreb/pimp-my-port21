@@ -1,17 +1,5 @@
 FROM amazonlinux:2
 
-RUN yum install -y gcc git make libstdc++-devel gcc-c++ fuse fuse-devel curl-devel libxml2-devel mailcap automake openssl-devel \
-  && cd /root \
-  && git clone https://github.com/s3fs-fuse/s3fs-fuse \
-  && cd s3fs-fuse/ \
-  && ./autogen.sh \
-  && ./configure --prefix=/usr --with-openssl \
-  && make \ 
-  && make install \
-  && yum remove -y gcc git make libstdc++-devel gcc-c++ fuse fuse-devel curl-devel libxml2-devel mailcap automake openssl-devel \
-  && yum clean all \
-  && rm -rf /var/cache/yum 
-
 RUN  yum install -y bash python python-pip certbot openssl \
   && yum clean all \
   && rm -rf /var/cache/yum 
@@ -22,11 +10,10 @@ RUN pip install -r /usr/local/bin/requirements.txt
 
 ADD *.py /usr/local/bin/
 ADD setup.py /usr/local/bin/setup
-ADD run_admin.sh /run.sh
+ADD run_admin_aws.sh /run.sh
 RUN chmod +x /usr/local/bin/setup /run.sh
 
 ENV CERTBOT_PORT=80
 ENV SETUP_REFRESH_FREQUENCY=86400
-ENV SSL_CERT_PATH=/var/ssl
 
 CMD ["/run.sh"]

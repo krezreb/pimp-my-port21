@@ -56,5 +56,8 @@ ENV SSL_CERT_PATH=/var/ssl
 ENV PASSIVE_PORTS_TO=30099
 ENV PROFTPD_CONF_FILE=/etc/proftpd/proftpd_ftps.conf
 ENV FTPS_REQUIRED=TRUE
+ENV FTP_HOME_PATH=/var/proftpd/home
+ENV FTP_USERS_FILE=/var/proftpd/ftpusers
+ENV SFTP_USERS_FILE=/var/proftpd/sftpusers
 
 CMD ["/run_proftpd.sh"]

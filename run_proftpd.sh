@@ -3,16 +3,17 @@
 trap "exit" INT TERM
 trap "kill -9 0" EXIT
 
-mkdir -p /var/proftpd/home
-mkdir -p /var/proftpd/authorized_keys
+set -u
 
-set -ue
+mkdir -p ${FTP_HOME_PATH}
 
-touch /var/proftpd/ftpusers
-touch /var/proftpd/sftpusers
-chmod 600 /var/proftpd/ftpusers
-chmod 600 /var/proftpd/sftpusers
-chmod -R 700 /var/proftpd/home
+set -e
+
+touch ${FTP_USERS_FILE}
+touch ${SFTP_USERS_FILE}
+chmod 600 ${FTP_USERS_FILE}
+chmod 600 ${SFTP_USERS_FILE}
+chmod -R 700 ${FTP_HOME_PATH}
 
 # regularly refresh proftpd to grab any new ssl cert changes
 (while true ; do sleep $PROFTPD_REFRESH_FREQUENCY ; kill -HUP $(pgrep proftpd) ; done) &
