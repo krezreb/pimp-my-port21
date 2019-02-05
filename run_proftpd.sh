@@ -9,8 +9,11 @@ mkdir -p ${FTP_HOME_PATH}
 
 set -e
 
+touch ${LIMITS_CONF_FILE}
 touch ${FTP_USERS_FILE}
 touch ${SFTP_USERS_FILE}
+touch ${LIMITS_CONF_FILE}
+
 chmod 600 ${FTP_USERS_FILE}
 chmod 600 ${SFTP_USERS_FILE}
 chmod -R 700 ${FTP_HOME_PATH}

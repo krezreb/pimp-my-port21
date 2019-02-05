@@ -12,9 +12,10 @@ import socket
 import crypt
 import string, random
 
+CHANGES_REPORT_FILE= os.environ.get('CHANGES_REPORT_FILE', None)
 CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
 USER_CONF_PATH=os.environ.get('USER_CONF_PATH', None)
-CONF_PATH = os.environ.get('CONF_PATH', '/etc/proftpd/')
+LIMITS_CONF_FILE= os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
 FTP_USERS_FILE = os.environ.get('FTP_USERS_FILE', '/var/proftpd/ftpusers')
 SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
@@ -43,7 +44,6 @@ def run(cmd, splitlines=False):
     exitcode = int(proc.returncode)
 
     return (out, err, exitcode)
-
 
 def log(s):
     print("SETUP: {}".format(s))
@@ -92,11 +92,14 @@ class Setup(object):
         self.ftp_users = []
         self.sftp_users = []
         self.limitsconf = []
+        self.changes = []
     
     def random_string(self, length=32):
         return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
 
     def get_password(self, username):
+        
+        isnew = False
         
         if not os.path.isdir(PASSWORD_STORE_PATH):
             os.makedirs(PASSWORD_STORE_PATH)
@@ -105,6 +108,7 @@ class Setup(object):
         
         if not os.path.isfile(password_file):
             password = self.random_string()
+            isnew = True
             
             with open(password_file, 'w') as fh:
                 json.dump(password, fh)
@@ -113,7 +117,7 @@ class Setup(object):
             with open(password_file, 'r') as fh:
                 password = json.load(fh)
             
-        return password
+        return (password, isnew)
         
     
     def make_accounts(self, user_conf_path=None):
@@ -151,6 +155,8 @@ class Setup(object):
                             prefix = conf['user_prefix']
                         except KeyError:
                             prefix = ""
+
+                        readonly_user = False
             
                         if raw_username[-3:] == "_ro":
                             readonly_user = True
@@ -167,7 +173,7 @@ class Setup(object):
                         # http://www.proftpd.org/docs/howto/AuthFiles.html
                         # username:password:uid:gid:gecos:homedir:shell
                         
-                        password = self.get_password(username)
+                        (password, isnew) = self.get_password(username)
                         
                         if len(password) < PASSWORD_MIN_LENGTH:
                             log("Password provided for user {} is less than the minimum {} characters, skipping".format(username, PASSWORD_MIN_LENGTH))
@@ -176,7 +182,7 @@ class Setup(object):
                         hash =  crypt.crypt(password, "$1${}".format(self.random_string(16)))
                         
                         # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-                        user_line = "{}:{}:0:0::{}:/bin/false\n".format(username,hash, home)
+                        user_line = "{}:{}:0:0::{}:/bin/false".format(username,hash, home)
                         
                         protocols = []
                         if u != None:
@@ -185,16 +191,17 @@ class Setup(object):
                             except KeyError:
                                 pass
                             
+                        authorized_keys = None
                         if u != None:
                             try:
-                                keys = u['authorized_keys']
+                                authorized_keys = u['authorized_keys']
                                 keyfile = '{}/{}'.format(USER_KEYS_PATH, username)
                     
                                 if not os.path.isdir(USER_KEYS_PATH):
                                     os.makedirs(USER_KEYS_PATH)
                                     
                                 with open(keyfile, "w") as fac:
-                                    for k in keys:
+                                    for k in authorized_keys:
                                         fac.write("---- BEGIN SSH2 PUBLIC KEY ----\n")
                                         rawkey = k.split(" ")[1]
                                         
@@ -223,21 +230,45 @@ class Setup(object):
                         if 'ftp' in protocols:
                             log("Authing user {} for ftp using their password".format(username))
                             self.ftp_users.append(user_line)
-                                    
-                        if not os.path.isdir(home):
-                            os.makedirs(home)
-                        
+                                   
+                        authorized_ips = None # any ip allowed by default 
                         if u != None:
                             try:
-                                ips = u['authorized_ips']
+                                authorized_ips = u['authorized_ips']
                                 self.limitsconf.append("<IfUser {}>\n<Limit LOGIN>\n".format(username))
-                                for ip in ips:
+                                for ip in authorized_ips:
                                     self.limitsconf.append("Allow from {}\n".format(ip))
                                 self.limitsconf.append("DenyAll\n</Limit>\n</IfUser>\n")
                                 
                             except KeyError:
                                 pass
             
+                        user_email = None
+                        
+                        try:
+                            user_email = u['email']
+                        except:
+                            pass
+                        
+                        if isnew:
+                            change = {
+                                "prefix" : prefix,
+                                "username" : username,
+                                "readonly_user" : readonly_user,
+                                "protocols" : protocols,
+                            }
+                            if 'ftp' in protocols:
+                                change["password"] = password
+                                
+                            if 'sftp' in protocols and authorized_keys != None:
+                                change["authorized_keys"] = authorized_keys
+                                
+                            if authorized_ips != None:
+                                change["authorized_ips"] = authorized_ips
+                            if user_email != None:
+                                change["user_email"] = user_email                               
+                            
+                            self.changes.append(change)
         log("Done")
         return (change, fail)
     
@@ -312,18 +343,29 @@ elif not os.path.isfile(SSL_CERT_PATH+'/domain/cert.pem'):
     cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
     run(cmd)
     
-if USER_CONF_PATH != None and os.path.isdir(USER_CONF_PATH):
-    s = Setup()
-    s.make_accounts(user_conf_path=USER_CONF_PATH)
-    
-    with open(FTP_USERS_FILE, "w") as fh:
-        fh.write("\n".join(s.ftp_users))
+if USER_CONF_PATH != None:
+    if os.path.isdir(USER_CONF_PATH):
+        log("Setting up users, USER_CONF_PATH={}".format(USER_CONF_PATH))
+        s = Setup()
+        s.make_accounts(user_conf_path=USER_CONF_PATH)
         
-    with open(SFTP_USERS_FILE, "w") as fh:
-        fh.write("\n".join(s.sftp_users))
+        with open(FTP_USERS_FILE, "w") as fh:
+            fh.write("\n".join(s.ftp_users))
+            
+        with open(SFTP_USERS_FILE, "w") as fh:
+            fh.write("\n".join(s.sftp_users))
+            
+        with open(LIMITS_CONF_FILE, "w") as fh:
+            fh.write("\n".join(s.limitsconf))
+            
+        if CHANGES_REPORT_FILE != None:
+            with open(CHANGES_REPORT_FILE, "w") as fh:
+                json.dump(s.changes, fh, indent=4)
         
-    limits_file = '{}/conf.d/limits.conf'.format(CONF_PATH)
-    with open(limits_file, "w") as fh:
-        fh.write("\n".join(s.limitsconf))
-          
+    else:
+        log("Not setting up users, USER_CONF_PATH={}, but directory does not exist".format(USER_CONF_PATH))
         
+        
+else:
+    log("Not setting up users, USER_CONF_PATH not set")
+            

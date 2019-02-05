@@ -50,6 +50,7 @@ RUN chmod +x /run_proftpd.sh
 RUN mkdir -p /etc/proftpd/conf.d
 
 ENV FTP_PORT=21
+ENV LIMITS_CONF_FILE=/etc/proftpd/conf.d/limits.conf
 ENV PROFTPD_REFRESH_FREQUENCY=600
 ENV PASSIVE_PORTS_FROM=30000
 ENV SSL_CERT_PATH=/var/ssl
