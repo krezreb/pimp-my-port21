@@ -243,10 +243,10 @@ class Setup(object):
                             except KeyError:
                                 pass
             
-                        user_email = None
+                        email = None
                         
                         try:
-                            user_email = u['email']
+                            email = u['email']
                         except:
                             pass
                         
@@ -265,8 +265,8 @@ class Setup(object):
                                 
                             if authorized_ips != None:
                                 change["authorized_ips"] = authorized_ips
-                            if user_email != None:
-                                change["user_email"] = user_email                               
+                            if email != None:
+                                change["email"] = email                               
                             
                             self.changes.append(change)
         log("Done")
