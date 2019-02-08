@@ -248,7 +248,10 @@ class Setup(object):
                         try:
                             email = u['email']
                         except:
-                            pass
+                            try:
+                                email = conf['default_email']
+                            except:
+                                pass
                         
                         if isnew:
                             change = {
