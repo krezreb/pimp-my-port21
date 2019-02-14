@@ -150,7 +150,11 @@ class Setup(object):
                     for raw_username, u in conf["users"].items():
             
                         username = raw_username
-                        home = FTP_HOME_PATH+'/'+raw_username
+                        
+                        try:
+                            home = FTP_HOME_PATH+'/'+u['home']
+                        except KeyError:
+                            home = FTP_HOME_PATH+'/'+raw_username
                         
                         try:
                             prefix = conf['user_prefix']
@@ -165,8 +169,12 @@ class Setup(object):
                         
                         if len(prefix) > 0:
                             username = "{}_{}".format(prefix, raw_username)
-                            home = FTP_HOME_PATH+'/'+prefix+'/'+raw_username
-                        
+                            
+                            try:
+                                home = FTP_HOME_PATH+'/'+prefix+'/'+u['home']
+                            except KeyError:
+                                home = FTP_HOME_PATH+'/'+prefix+'/'+raw_username
+                                
                         
                         if raw_username[-3:] == "_ro":
                             home = home[:-3]
