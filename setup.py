@@ -25,6 +25,7 @@ PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', None)
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
 SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/etc/letsencrypt/live')
+SSL_CERT_SELF_SIGNED = os.environ.get('SSL_CERT_SELF_SIGNED', 'false').lower() in ["true", "on", "1", "yes"]
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
 CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
 MY_IP=None
@@ -231,17 +232,25 @@ class Setup(object):
                             log("Authing user {} for ftp using their password".format(username))
                             self.ftp_users.append(user_line)
                                    
-                        authorized_ips = None # any ip allowed by default 
+                        authorized_ips = [] # any ip allowed by default 
+                        try:
+                            for ip in conf['authorized_ips']:
+                                authorized_ips.append(ip)
+                        except KeyError:
+                            pass
+                        
                         if u != None:
                             try:
-                                authorized_ips = u['authorized_ips']
-                                self.limitsconf.append("<IfUser {}>\n<Limit LOGIN>\n".format(username))
-                                for ip in authorized_ips:
-                                    self.limitsconf.append("Allow from {}\n".format(ip))
-                                self.limitsconf.append("DenyAll\n</Limit>\n</IfUser>\n")
-                                
+                                for ip in u['authorized_ips']:
+                                    authorized_ips.append(ip)
                             except KeyError:
                                 pass
+            
+                        if len(authorized_ips) > 0:
+                            self.limitsconf.append("<IfUser {}>\n<Limit LOGIN>\n".format(username))
+                            for ip in authorized_ips:
+                                self.limitsconf.append("Allow from {}\n".format(ip))
+                            self.limitsconf.append("DenyAll\n</Limit>\n</IfUser>\n")
             
                         email = None
                         
@@ -249,7 +258,7 @@ class Setup(object):
                             email = u['email']
                         except:
                             try:
-                                email = conf['default_email']
+                                email = conf['email']
                             except:
                                 pass
                         
@@ -333,11 +342,8 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
 if SSL_CERT_FQDN != None:
     cert_file=SSL_CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
     (change, fail) = get_le_cert(cert_file, fqdn=SSL_CERT_FQDN, cert_email=SSL_CERT_EMAIL)
-    if not fail:
-        if not os.path.islink(SSL_CERT_PATH+'/domain'):
-            os.symlink(SSL_CERT_FQDN, SSL_CERT_PATH+'/domain')
                 
-elif not os.path.isfile(SSL_CERT_PATH+'/domain/cert.pem'):
+elif not os.path.isfile(SSL_CERT_PATH+'/domain/cert.pem') and SSL_CERT_SELF_SIGNED:
     if not os.path.isdir(SSL_CERT_PATH+'/domain'):
         os.makedirs(SSL_CERT_PATH+'/domain')
     
