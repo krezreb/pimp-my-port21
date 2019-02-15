@@ -153,7 +153,7 @@ class Setup(object):
                         
                         try:
                             home = FTP_HOME_PATH+'/'+u['home']
-                        except KeyError:
+                        except:
                             home = FTP_HOME_PATH+'/'+raw_username
                         
                         try:
@@ -172,7 +172,7 @@ class Setup(object):
                             
                             try:
                                 home = FTP_HOME_PATH+'/'+prefix+'/'+u['home']
-                            except KeyError:
+                            except:
                                 home = FTP_HOME_PATH+'/'+prefix+'/'+raw_username
                                 
                         
