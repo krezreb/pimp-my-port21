@@ -188,11 +188,6 @@ class Setup(object):
                             log("Password provided for user {} is less than the minimum {} characters, skipping".format(username, PASSWORD_MIN_LENGTH))
                             continue
                         
-                        hash =  crypt.crypt(password, "$1${}".format(self.random_string(16)))
-                        
-                        # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-                        user_line = "{}:{}:0:0::{}:/bin/false".format(username,hash, home)
-                        
                         protocols = []
                         if u != None:
                             try:
@@ -231,14 +226,26 @@ class Setup(object):
                         else:
                             protocols.append('ftp') # no rsa key set so ftp
                             
+                        hash =  crypt.crypt(password, "$1${}".format(self.random_string(16)))
                         
-                        if 'sftp' in protocols:
-                            log("Authing user {} for sftp using their key(s)".format(username))
-                            self.sftp_users.append(user_line)
-                            
+                        # here we put 0 for uid and gid (root) because we don't care about perms here =) 
+                        user_line = "{}:{}:0:0::{}:/bin/false".format(username,hash, home)
+
                         if 'ftp' in protocols:
                             log("Authing user {} for ftp using their password".format(username))
                             self.ftp_users.append(user_line)
+                                                    
+                        if 'sftp' in protocols:
+                            log("Authing user {} for sftp using their key(s)".format(username))
+                            
+                            if authorized_keys != None:
+                                # an RSA key was specified, do not allow password auth
+                                # this line puts in a password hash that will never work :D
+                                user_line = "{}:{}:0:0::{}:/bin/false".format(username,'$1$RsaKeyConfigured', home)
+
+                            self.sftp_users.append(user_line)
+                            
+
                                    
                         authorized_ips = [] # any ip allowed by default 
                         try:
@@ -277,12 +284,12 @@ class Setup(object):
                                 "readonly_user" : readonly_user,
                                 "protocols" : protocols,
                             }
-                            if 'ftp' in protocols:
-                                change["password"] = password
+                            
+                            change["password"] = password
                                 
                             if 'sftp' in protocols and authorized_keys != None:
                                 change["authorized_keys"] = authorized_keys
-                                
+                            
                             if authorized_ips != None:
                                 change["authorized_ips"] = authorized_ips
                             if email != None:
