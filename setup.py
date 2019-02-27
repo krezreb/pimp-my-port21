@@ -221,10 +221,11 @@ class Setup(object):
                                 protocols.append('sftp')
                                              
                             except KeyError:
-                                protocols.append('ftp') # no rsa key set so ftp
-                                pass
+                                if len(protocols) == 0:
+                                    protocols.append('ftp') # no rsa key set so ftp
                         else:
-                            protocols.append('ftp') # no rsa key set so ftp
+                            if len(protocols) == 0:
+                                protocols.append('ftp') # no rsa key set so ftp
                             
                         hash =  crypt.crypt(password, "$1${}".format(self.random_string(16)))
                         
@@ -236,13 +237,15 @@ class Setup(object):
                             self.ftp_users.append(user_line)
                                                     
                         if 'sftp' in protocols:
-                            log("Authing user {} for sftp using their key(s)".format(username))
                             
                             if authorized_keys != None:
+                                log("Authing user {} for sftp using their key(s)".format(username))
                                 # an RSA key was specified, do not allow password auth
                                 # this line puts in a password hash that will never work :D
                                 user_line = "{}:{}:0:0::{}:/bin/false".format(username,'$1$RsaKeyConfigured', home)
-
+                            else:
+                                log("Authing user {} for sftp using their password".format(username))
+                                
                             self.sftp_users.append(user_line)
                             
 
