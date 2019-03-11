@@ -13,7 +13,7 @@ import crypt
 import string, random
 
 CHANGES_REPORT_FILE= os.environ.get('CHANGES_REPORT_FILE', None)
-CERTBOT_PORT=os.environ.get('CERTBOT_PORT', '80')
+ACME_CERT_PORT=os.environ.get('ACME_CERT_PORT', '80')
 USER_CONF_PATH=os.environ.get('USER_CONF_PATH', None)
 LIMITS_CONF_FILE= os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
@@ -24,7 +24,7 @@ PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwo
 PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', None)
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
-SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/etc/letsencrypt/live')
+SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/var/ssl/domain')
 SSL_CERT_SELF_SIGNED = os.environ.get('SSL_CERT_SELF_SIGNED', 'false').lower() in ["true", "on", "1", "yes"]
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
 CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
@@ -302,13 +302,12 @@ class Setup(object):
         log("Done")
         return (change, fail)
     
-def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_days=31, certbot_port=80):
+def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_days=31, acme_cert_http_port=80):
     change = False
     fail = False
     
     log('get_le_cert()')
     
-    cmd = "certbot certonly --verbose --noninteractive --preferred-challenges http --standalone --http-01-port {} --agree-tos -d {}".format(certbot_port, fqdn)
     
     if os.path.isfile(cert_file):
         log('cert_file {} found'.format(cert_file))
@@ -326,6 +325,8 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
     
         if expires_in.days < expire_cutoff_days:
             log("Trying to renew cert {}".format(fqdn))
+            cmd = "acme.sh --renew --standalone --httpport {} -d {}".format(acme_cert_http_port, fqdn)
+
             (out, err, exitcode) = run(cmd)
             
             if exitcode == 0:
@@ -339,8 +340,9 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
                 fail = True
     else :
         log('cert_file {} not found'.format(cert_file))
+        cmd = "acme.sh --issue --standalone --httpport {} -d {}".format(acme_cert_http_port, fqdn)
 
-        cmd += ' --email="{}" '.format(cert_email)
+        cmd += ' --accountemail {} '.format(cert_email)
         (out, err, exitcode) = run(cmd)
         
         if exitcode != 0:
@@ -356,17 +358,18 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
     return (change, fail)
     
     
+
+cert_file=SSL_CERT_PATH+'/cert.pem'
     
 if SSL_CERT_FQDN != None:
-    cert_file=SSL_CERT_PATH+'/'+SSL_CERT_FQDN+'/cert.pem'
     (change, fail) = get_le_cert(cert_file, fqdn=SSL_CERT_FQDN, cert_email=SSL_CERT_EMAIL)
                 
-elif not os.path.isfile(SSL_CERT_PATH+'/domain/cert.pem') and SSL_CERT_SELF_SIGNED:
-    if not os.path.isdir(SSL_CERT_PATH+'/domain'):
-        os.makedirs(SSL_CERT_PATH+'/domain')
+elif not os.path.isfile(cert_file) and SSL_CERT_SELF_SIGNED:
+    if not os.path.isdir(SSL_CERT_PATH):
+        os.makedirs(SSL_CERT_PATH)
     
     log('INFO: Generating self-signed ssl certificate')
-    cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH+'/domain', SSL_CERT_PATH+'/domain')
+    cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
     cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
     run(cmd)
     

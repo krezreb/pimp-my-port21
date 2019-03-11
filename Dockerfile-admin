@@ -1,19 +1,47 @@
-FROM python:2.7-slim
-
-RUN apt update \
-    && apt install --no-install-recommends -y bash certbot openssl \
-    && apt clean
+FROM python:2.7-alpine
 
 ADD requirements.txt /usr/local/bin/
 
-RUN pip install -r /usr/local/bin/requirements.txt
+RUN apk update -f \
+  && apk --no-cache add -f \
+  openssl \
+  coreutils \
+  bind-tools \
+  git \ 
+  build-deps build-base libffi-dev openssl-dev \
+  curl \
+  socat \
+  bash \
+  tzdata \
+  && pip install -r /usr/local/bin/requirements.txt \
+  && apk del build-deps build-base libffi-dev openssl-dev \
+  && rm -rf /var/cache/apk/* 
+
+# install acme bash implementation
+RUN mkdir -p /etc/acme \
+    && cd /root \
+    && git clone https://github.com/Neilpang/acme.sh.git   \
+    && cd ./acme.sh \
+    && ./acme.sh --install \
+    --home /usr/local/bin \
+    --config-home /etc/acme \
+    && cd .. && rm -rf acme.sh
+
+# acme.sh conf options
+ENV AUTO_UPGRADE 0
+ENV DOMAIN_PATH=/var/ssl/domain
+ENV DOMAIN_CONF=/var/ssl/domain/domain.conf
+ENV DOMAIN_SSL_CONF=/var/ssl/domain/domain.csr.conf
+ENV LE_CONFIG_HOME=/etc/acme
+ENV CSR_PATH=/var/ssl/domain/csr.csr
+ENV CERT_KEY_PATH=/var/ssl/domain/privkey.pem
+ENV CERT_PATH=/var/ssl/domain/cert.pem
+ENV ACME_CERT_PORT=80
+ENV SETUP_REFRESH_FREQUENCY=86400
 
 ADD *.py /usr/local/bin/
 ADD setup.py /usr/local/bin/setup
 ADD run_admin.sh /run.sh
 RUN chmod +x /usr/local/bin/setup /run.sh
-
-ENV CERTBOT_PORT=80
-ENV SETUP_REFRESH_FREQUENCY=86400
 
 CMD ["/run.sh"]
