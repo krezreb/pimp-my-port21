@@ -11,10 +11,10 @@ services:
             - ftplimits:/etc/proftpd/conf.d
             - ./conf.yml:/users/conf.yml
             - ./ssl/:/var/ssl/
+            - ./acme_config/:/etc/acme/
         environment:
             - SETUP_REFRESH_FREQUENCY=3600
             - USER_CONF_ROOT=/users
-            - CERT_PATH=/var/ssl/     
     ftps:
         depends_on:
             - admin
