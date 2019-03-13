@@ -11,9 +11,10 @@ from urllib2 import urlopen
 import socket
 import crypt
 import string, random
+import argparse
 
+# FTP stuff
 CHANGES_REPORT_FILE= os.environ.get('CHANGES_REPORT_FILE', None)
-ACME_CERT_PORT=os.environ.get('ACME_CERT_PORT', '80')
 USER_CONF_PATH=os.environ.get('USER_CONF_PATH', None)
 LIMITS_CONF_FILE= os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
@@ -22,12 +23,20 @@ SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
 USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys')
 PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwords')
 PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
+
+# SSL cert stuff
+ACME_CERT_PORT=os.environ.get('ACME_CERT_PORT', '80')
 SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', None)
 SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
 SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/var/ssl/domain')
 SSL_CERT_SELF_SIGNED = os.environ.get('SSL_CERT_SELF_SIGNED', 'false').lower() in ["true", "on", "1", "yes"]
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
 CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--port', default=ACME_CERT_PORT, help='What port to use to issue certs')
+args = parser.parse_args()
+
 MY_IP=None
 
 def run(cmd, splitlines=False):
@@ -362,7 +371,7 @@ def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_day
 cert_file=SSL_CERT_PATH+'/cert.pem'
     
 if SSL_CERT_FQDN != None:
-    (change, fail) = get_le_cert(cert_file, fqdn=SSL_CERT_FQDN, cert_email=SSL_CERT_EMAIL)
+    (change, fail) = get_le_cert(cert_file, fqdn=SSL_CERT_FQDN, cert_email=SSL_CERT_EMAIL, expire_cutoff_days=CERT_EXPIRE_CUTOFF_DAYS, acme_cert_http_port=args.port)
                 
 elif not os.path.isfile(cert_file) and SSL_CERT_SELF_SIGNED:
     if not os.path.isdir(SSL_CERT_PATH):
