@@ -12,6 +12,7 @@ import socket
 import crypt
 import string, random
 import argparse
+import re
 
 # FTP stuff
 CHANGES_REPORT_FILE= os.environ.get('CHANGES_REPORT_FILE', None)
@@ -106,7 +107,28 @@ class Setup(object):
     
     def random_string(self, length=32):
         return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
-
+    
+    
+    def prefix_transform(self, prefix):
+        if prefix[-1] == "/":
+            prefix = prefix[0:-1]
+            
+        valid_chars = '-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        out = ""
+        for char in prefix:
+            if char == "/":
+                char = "_"
+            if char in valid_chars:
+                out += char
+                
+        return out
+    
+    def clean_home_path(self, home):
+        return re.sub(r"(\/+)", "/", home)
+    
+    def username_transform(self, username):
+        return username
+    
     def get_password(self, username):
         
         isnew = False
@@ -177,7 +199,7 @@ class Setup(object):
                             
                         
                         if len(prefix) > 0:
-                            username = "{}_{}".format(prefix, raw_username)
+                            username = "{}_{}".format(self.prefix_transform(prefix), raw_username)
                             
                             try:
                                 home = FTP_HOME_PATH+'/'+prefix+'/'+u['home']
@@ -191,6 +213,10 @@ class Setup(object):
                         # http://www.proftpd.org/docs/howto/AuthFiles.html
                         # username:password:uid:gid:gecos:homedir:shell
                         
+                        home = self.clean_home_path(home)
+                        
+                        
+                        username = self.username_transform(username)
                         (password, isnew) = self.get_password(username)
                         
                         if len(password) < PASSWORD_MIN_LENGTH:
