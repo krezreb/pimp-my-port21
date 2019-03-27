@@ -40,8 +40,8 @@ ENV ACME_CERT_PORT=80
 ENV SETUP_REFRESH_FREQUENCY=86400
 
 ADD *.py /usr/local/bin/
-ADD setup.py /usr/local/bin/setup
+RUN ln -s /usr/local/bin/setup.py  /usr/local/bin/setup 
 ADD run_admin.sh /run.sh
-RUN chmod +x /usr/local/bin/setup /run.sh
+RUN chmod +x /usr/local/bin/setup.py /run.sh
 
 CMD ["/run.sh"]

@@ -37,8 +37,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--port', default=ACME_CERT_PORT, help='What port to use to issue certs')
 args = parser.parse_args()
 
-self.my_ip = None
-
 def run(cmd, splitlines=False):
     # you had better escape cmd cause it's goin to the shell as is
     proc = Popen([cmd], stdout=PIPE, stderr=PIPE, universal_newlines=True, shell=True)
@@ -193,6 +191,31 @@ class SetupAccounts(object):
     def clean_home_path(self, home):
         return re.sub(r"(\/+)", "/", home)
     
+    def get_home_and_username(self, username, user_dict, conf):
+        try:
+            home =  user_dict['home']
+        except:
+            home =  username
+        
+        prefix = self.get_prefix(conf)
+        
+        if len(prefix) > 0:
+            username = "{}_{}".format(self.prefix_transform(prefix), username)
+            
+            try:
+                home = prefix + '/' + user_dict['home']
+            except:
+                home = prefix + '/' + username
+        
+        if username[-3:] == "_ro":
+            home = home[:-3]
+                            
+        # http://www.proftpd.org/docs/howto/AuthFiles.html
+        # username:password:uid:gid:gecos:homedir:shell
+        
+        username = self.username_transform(username)
+        return (home, username)
+    
     def username_transform(self, username):
         return username
     
@@ -245,38 +268,8 @@ class SetupAccounts(object):
                     # with open(PROFTPD_USERS_FILE, "w") as fh:
                     
                     for raw_username, u in conf["users"].items():
-            
-                        username = raw_username
-                        
-                        try:
-                            home = FTP_HOME_PATH + '/' + u['home']
-                        except:
-                            home = FTP_HOME_PATH + '/' + raw_username
-                        
-                        prefix = self.get_prefix(conf)
 
-                        readonly_user = False
-            
-                        if raw_username[-3:] == "_ro":
-                            readonly_user = True
-                        
-                        if len(prefix) > 0:
-                            username = "{}_{}".format(self.prefix_transform(prefix), raw_username)
-                            
-                            try:
-                                home = FTP_HOME_PATH + '/' + prefix + '/' + u['home']
-                            except:
-                                home = FTP_HOME_PATH + '/' + prefix + '/' + raw_username
-                        
-                        if raw_username[-3:] == "_ro":
-                            home = home[:-3]
-                                            
-                        # http://www.proftpd.org/docs/howto/AuthFiles.html
-                        # username:password:uid:gid:gecos:homedir:shell
-                        
-                        home = self.clean_home_path(home)
-                        
-                        username = self.username_transform(username)
+                        (home, username) = self.get_home_and_username(raw_username, u, conf)
                         (password, isnew) = self.get_password(username)
                         
                         if len(password) < PASSWORD_MIN_LENGTH:
@@ -324,8 +317,10 @@ class SetupAccounts(object):
                             
                         hash = crypt.crypt(password, "$1${}".format(self.random_string(16)))
                         
+                        abs_home = self.clean_home_path( FTP_HOME_PATH + '/' + home )
+                        
                         # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-                        user_line = "{}:{}:0:0::{}:/bin/false".format(username, hash, home)
+                        user_line = "{}:{}:0:0::{}:/bin/false".format(username, hash, abs_home)
 
                         if 'ftp' in protocols:
                             log("Authing user {} for ftp using their password".format(username))
@@ -337,7 +332,7 @@ class SetupAccounts(object):
                                 log("Authing user {} for sftp using their key(s)".format(username))
                                 # an RSA key was specified, do not allow password auth
                                 # this line puts in a password hash that will never work :D
-                                user_line = "{}:{}:0:0::{}:/bin/false".format(username, '$1$RsaKeyConfigured', home)
+                                user_line = "{}:{}:0:0::{}:/bin/false".format(username, '$1$RsaKeyConfigured', abs_home)
                             else:
                                 log("Authing user {} for sftp using their password".format(username))
                                 
@@ -374,8 +369,13 @@ class SetupAccounts(object):
                                 pass
                         
                         if isnew:
+                            readonly_user = False
+            
+                            if raw_username[-3:] == "_ro":
+                                readonly_user = True
+                                
                             change = {
-                                "prefix" : prefix,
+                                "prefix" : self.get_prefix(conf),
                                 "username" : username,
                                 "readonly_user" : readonly_user,
                                 "protocols" : protocols,
