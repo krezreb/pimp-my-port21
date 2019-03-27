@@ -15,30 +15,29 @@ import argparse
 import re
 
 # FTP stuff
-CHANGES_REPORT_FILE= os.environ.get('CHANGES_REPORT_FILE', None)
-USER_CONF_PATH=os.environ.get('USER_CONF_PATH', None)
-LIMITS_CONF_FILE= os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
+CHANGES_REPORT_FILE = os.environ.get('CHANGES_REPORT_FILE', None)
+USER_CONF_PATH = os.environ.get('USER_CONF_PATH', None)
+LIMITS_CONF_FILE = os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
 FTP_USERS_FILE = os.environ.get('FTP_USERS_FILE', '/var/proftpd/ftpusers')
 SFTP_USERS_FILE = os.environ.get('SFTP_USERS_FILE', '/var/proftpd/sftpusers')
 USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys')
 PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwords')
-PASSWORD_MIN_LENGTH=int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
+PASSWORD_MIN_LENGTH = int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 
 # SSL cert stuff
-ACME_CERT_PORT=os.environ.get('ACME_CERT_PORT', '80')
-SSL_CERT_EMAIL=os.environ.get('SSL_CERT_EMAIL', None)
-SSL_CERT_FQDN=os.environ.get('SSL_CERT_FQDN', None)
+ACME_CERT_PORT = os.environ.get('ACME_CERT_PORT', '80')
+SSL_CERT_EMAIL = os.environ.get('SSL_CERT_EMAIL', None)
+SSL_CERT_FQDN = os.environ.get('SSL_CERT_FQDN', None)
 SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/var/ssl/domain')
 SSL_CERT_SELF_SIGNED = os.environ.get('SSL_CERT_SELF_SIGNED', 'false').lower() in ["true", "on", "1", "yes"]
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
-CHECK_IP_URL=os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--port', default=ACME_CERT_PORT, help='What port to use to issue certs')
 args = parser.parse_args()
 
-MY_IP=None
+self.my_ip = None
 
 def run(cmd, splitlines=False):
     # you had better escape cmd cause it's goin to the shell as is
@@ -56,48 +55,109 @@ def run(cmd, splitlines=False):
 
     return (out, err, exitcode)
 
+
 def log(s):
     print("SETUP: {}".format(s))
 
-def get_my_ip():
-    global MY_IP
-    
-    if MY_IP == None:
-        MY_IP = urlopen(CHECK_IP_URL).read()
 
-        if MY_HOSTNAME != None:
-            ip = socket.gethostbyname(MY_HOSTNAME)
-            if ip != MY_IP:
-                log("CONFIG ERROR: env var MY_HOSTNAME={} which resolves to ip {}. But according to {} my ip is {}".format(MY_HOSTNAME, ip, CHECK_IP_URL, MY_IP))
-                exit(-100)
-                
-        log("My ip appears to be {}".format(MY_IP))
+class SetupSSL(object):
 
-    return MY_IP
-
-
-def points_to_me(s):
-    get_my_ip()
-    
-    url = 'http://{}'.format(s)
-    # from urlparse import urlparse  # Python 2
-    parsed_uri = urlparse(url)
-    domain = parsed_uri.netloc.split(':')[0]
-    success = False
-    ip = None
-    try:
-        ip = socket.gethostbyname(domain)
-
-        if ip == MY_IP:
-            success = True
-    except Exception as e:
-        log(e)
+    def __init__(self, fqdn):
+        self.my_ip = None
+        self.fqdn = fqdn
+        self.my_hostname = os.environ.get('MY_HOSTNAME', None)
+        self.check_ip_url = os.environ.get('CHECK_IP_URL', 'http://ip.42.pl/raw')
         
-    return (success, domain, ip, MY_IP)
+    def points_to_me(self, s):
+        self.get_my_ip()
+        
+        url = 'http://{}'.format(s)
+        # from urlparse import urlparse  # Python 2
+        parsed_uri = urlparse(url)
+        domain = parsed_uri.netloc.split(':')[0]
+        success = False
+        ip = None
+        try:
+            ip = socket.gethostbyname(domain)
+    
+            if ip == self.my_ip:
+                success = True
+        except Exception as e:
+            log(e)
+            
+        return (success, domain, ip, self.my_ip)
+
+    def get_my_ip(self):
+        
+        if self.my_ip == None:
+            self.my_ip = urlopen(self.check_ip_url).read()
+    
+            if self.my_hostname != None:
+                ip = socket.gethostbyname(self.my_hostname)
+                if ip != self.my_ip:
+                    log("CONFIG ERROR: env var MY_HOSTNAME={} which resolves to ip {}. But according to {} my ip is {}".format(self.my_hostname, ip, self.check_ip_url, self.my_ip))
+                    exit(-100)
+                    
+            log("My ip appears to be {}".format(self.my_ip))
+    
+        return self.my_ip
+    
+    def get_le_cert(self, cert_file, cert_email="you@example.com", expire_cutoff_days=31, acme_cert_http_port=80):
+        change = False
+        fail = False
+        
+        log('get_le_cert()')
+        
+        if os.path.isfile(cert_file):
+            log('cert_file {} found'.format(cert_file))
+            
+            # cert already exists
+            cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
+            exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
+            
+            expires_in = exp - datetime.datetime.utcnow()
+            
+            if expires_in.days <= 0:
+                log("Found cert {} EXPIRED".format(self.fqdn))
+            else:
+                log("Found cert {}, expires in {} days".format(self.fqdn, expires_in.days))
+        
+            if expires_in.days < expire_cutoff_days:
+                log("Trying to renew cert {}".format(self.fqdn))
+                cmd = "acme.sh --renew --standalone --httpport {} -d {}".format(acme_cert_http_port, self.fqdn)
+    
+                (out, err, exitcode) = run(cmd)
+                
+                if exitcode == 0:
+                    log("RENEW SUCCESS: Certificate {} successfully renewed".format(self.fqdn))
+                    change = True
+        
+                else:
+                    log("RENEW FAIL: ERROR renewing certificate {}".format(self.fqdn))
+                    log(out)
+                    log(err)
+                    fail = True
+        else :
+            log('cert_file {} not found'.format(cert_file))
+            cmd = "acme.sh --issue --standalone --httpport {} -d {}".format(acme_cert_http_port, self.fqdn)
+    
+            cmd += ' --accountemail {} '.format(cert_email)
+            (out, err, exitcode) = run(cmd)
+            
+            if exitcode != 0:
+                log("Requesting cert for {}: FAILED".format(self.fqdn))
+                log(cmd)
+                log(err)
+                fail = True
+    
+            else:
+                log("Requesting cert for {}: SUCCESS".format(self.fqdn))
+                change = True
+        
+        return (change, fail)
 
 
-
-class Setup(object):
+class SetupAccounts(object):
     
     def __init__(self):
         self.ftp_users = []
@@ -108,6 +168,13 @@ class Setup(object):
     def random_string(self, length=32):
         return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
     
+    def get_prefix(self, conf):
+        try:
+            prefix = conf['user_prefix']
+        except KeyError:
+            prefix = ""
+            
+        return prefix
     
     def prefix_transform(self, prefix):
         if prefix[-1] == "/":
@@ -150,7 +217,6 @@ class Setup(object):
                 password = json.load(fh)
             
         return (password, isnew)
-        
     
     def make_accounts(self, user_conf_path=None):
         log("Start")
@@ -158,7 +224,7 @@ class Setup(object):
         change = False
         fail = False
 
-        #limits_conf_file = '{}/.limits_conf_file'.format(FTP_HOME_PATH)
+        # limits_conf_file = '{}/.limits_conf_file'.format(FTP_HOME_PATH)
         
         self.limitsconf.append("<IfUser regex _ro$>\n<Limit WRITE>\nDenyAll\n</Limit>\n</IfUser>\n")
         
@@ -176,36 +242,31 @@ class Setup(object):
                         fail = True
                         continue
         
-                    #with open(PROFTPD_USERS_FILE, "w") as fh:
+                    # with open(PROFTPD_USERS_FILE, "w") as fh:
                     
                     for raw_username, u in conf["users"].items():
             
                         username = raw_username
                         
                         try:
-                            home = FTP_HOME_PATH+'/'+u['home']
+                            home = FTP_HOME_PATH + '/' + u['home']
                         except:
-                            home = FTP_HOME_PATH+'/'+raw_username
+                            home = FTP_HOME_PATH + '/' + raw_username
                         
-                        try:
-                            prefix = conf['user_prefix']
-                        except KeyError:
-                            prefix = ""
+                        prefix = self.get_prefix(conf)
 
                         readonly_user = False
             
                         if raw_username[-3:] == "_ro":
                             readonly_user = True
-                            
                         
                         if len(prefix) > 0:
                             username = "{}_{}".format(self.prefix_transform(prefix), raw_username)
                             
                             try:
-                                home = FTP_HOME_PATH+'/'+prefix+'/'+u['home']
+                                home = FTP_HOME_PATH + '/' + prefix + '/' + u['home']
                             except:
-                                home = FTP_HOME_PATH+'/'+prefix+'/'+raw_username
-                                
+                                home = FTP_HOME_PATH + '/' + prefix + '/' + raw_username
                         
                         if raw_username[-3:] == "_ro":
                             home = home[:-3]
@@ -214,7 +275,6 @@ class Setup(object):
                         # username:password:uid:gid:gecos:homedir:shell
                         
                         home = self.clean_home_path(home)
-                        
                         
                         username = self.username_transform(username)
                         (password, isnew) = self.get_password(username)
@@ -246,10 +306,10 @@ class Setup(object):
                                         
                                         line = ""
                                         for ch in rawkey:
-                                            line+=ch
+                                            line += ch
                                             if len(line) == 64:
                                                 fac.write("{}\n".format(line))
-                                                line=""
+                                                line = ""
                                         fac.write("{}\n".format(line))
                                         fac.write("---- END SSH2 PUBLIC KEY ----\n")
                                        
@@ -257,15 +317,15 @@ class Setup(object):
                                              
                             except KeyError:
                                 if len(protocols) == 0:
-                                    protocols.append('ftp') # no rsa key set so ftp
+                                    protocols.append('ftp')  # no rsa key set so ftp
                         else:
                             if len(protocols) == 0:
-                                protocols.append('ftp') # no rsa key set so ftp
+                                protocols.append('ftp')  # no rsa key set so ftp
                             
-                        hash =  crypt.crypt(password, "$1${}".format(self.random_string(16)))
+                        hash = crypt.crypt(password, "$1${}".format(self.random_string(16)))
                         
                         # here we put 0 for uid and gid (root) because we don't care about perms here =) 
-                        user_line = "{}:{}:0:0::{}:/bin/false".format(username,hash, home)
+                        user_line = "{}:{}:0:0::{}:/bin/false".format(username, hash, home)
 
                         if 'ftp' in protocols:
                             log("Authing user {} for ftp using their password".format(username))
@@ -277,15 +337,13 @@ class Setup(object):
                                 log("Authing user {} for sftp using their key(s)".format(username))
                                 # an RSA key was specified, do not allow password auth
                                 # this line puts in a password hash that will never work :D
-                                user_line = "{}:{}:0:0::{}:/bin/false".format(username,'$1$RsaKeyConfigured', home)
+                                user_line = "{}:{}:0:0::{}:/bin/false".format(username, '$1$RsaKeyConfigured', home)
                             else:
                                 log("Authing user {} for sftp using their password".format(username))
                                 
                             self.sftp_users.append(user_line)
-                            
-
                                    
-                        authorized_ips = [] # any ip allowed by default 
+                        authorized_ips = []  # any ip allowed by default 
                         try:
                             for ip in conf['authorized_ips']:
                                 authorized_ips.append(ip)
@@ -336,101 +394,47 @@ class Setup(object):
                             self.changes.append(change)
         log("Done")
         return (change, fail)
-    
-def get_le_cert(cert_file, fqdn, cert_email="you@example.com", expire_cutoff_days=31, acme_cert_http_port=80):
-    change = False
-    fail = False
-    
-    log('get_le_cert()')
-    
-    
-    if os.path.isfile(cert_file):
-        log('cert_file {} found'.format(cert_file))
-        
-        # cert already exists
-        cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
-        exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
-        
-        expires_in = exp - datetime.datetime.utcnow()
-        
-        if expires_in.days <= 0:
-            log("Found cert {} EXPIRED".format(fqdn))
-        else:
-            log("Found cert {}, expires in {} days".format(fqdn, expires_in.days))
-    
-        if expires_in.days < expire_cutoff_days:
-            log("Trying to renew cert {}".format(fqdn))
-            cmd = "acme.sh --renew --standalone --httpport {} -d {}".format(acme_cert_http_port, fqdn)
 
-            (out, err, exitcode) = run(cmd)
+    
+if __name__ == '__main__':
+
+    cert_file = SSL_CERT_PATH + '/cert.pem'
+    s = SetupSSL(fqdn=SSL_CERT_FQDN)
+
+    if SSL_CERT_FQDN != None:
+        (change, fail) = s.get_le_cert(cert_file, cert_email=SSL_CERT_EMAIL, expire_cutoff_days=CERT_EXPIRE_CUTOFF_DAYS, acme_cert_http_port=args.port)
+                    
+    elif not os.path.isfile(cert_file) and SSL_CERT_SELF_SIGNED:
+        if not os.path.isdir(SSL_CERT_PATH):
+            os.makedirs(SSL_CERT_PATH)
+        
+        log('INFO: Generating self-signed ssl certificate')
+        cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
+        cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
+        run(cmd)
+        
+    if USER_CONF_PATH != None:
+        if os.path.isdir(USER_CONF_PATH):
+            log("Setting up users, USER_CONF_PATH={}".format(USER_CONF_PATH))
+            s = SetupAccounts()
+            s.make_accounts(user_conf_path=USER_CONF_PATH)
             
-            if exitcode == 0:
-                log("RENEW SUCCESS: Certificate {} successfully renewed".format(fqdn))
-                change = True
-    
-            else:
-                log("RENEW FAIL: ERROR renewing certificate {}".format(fqdn))
-                log(out)
-                log(err)
-                fail = True
-    else :
-        log('cert_file {} not found'.format(cert_file))
-        cmd = "acme.sh --issue --standalone --httpport {} -d {}".format(acme_cert_http_port, fqdn)
-
-        cmd += ' --accountemail {} '.format(cert_email)
-        (out, err, exitcode) = run(cmd)
-        
-        if exitcode != 0:
-            log("Requesting cert for {}: FAILED".format(fqdn))
-            log(cmd)
-            log(err)
-            fail = True
-
-        else:
-            log("Requesting cert for {}: SUCCESS".format(fqdn))
-            change = True
-    
-    return (change, fail)
-    
-    
-
-cert_file=SSL_CERT_PATH+'/cert.pem'
-    
-if SSL_CERT_FQDN != None:
-    (change, fail) = get_le_cert(cert_file, fqdn=SSL_CERT_FQDN, cert_email=SSL_CERT_EMAIL, expire_cutoff_days=CERT_EXPIRE_CUTOFF_DAYS, acme_cert_http_port=args.port)
+            with open(FTP_USERS_FILE, "w") as fh:
+                fh.write("\n".join(s.ftp_users))
                 
-elif not os.path.isfile(cert_file) and SSL_CERT_SELF_SIGNED:
-    if not os.path.isdir(SSL_CERT_PATH):
-        os.makedirs(SSL_CERT_PATH)
-    
-    log('INFO: Generating self-signed ssl certificate')
-    cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
-    cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
-    run(cmd)
-    
-if USER_CONF_PATH != None:
-    if os.path.isdir(USER_CONF_PATH):
-        log("Setting up users, USER_CONF_PATH={}".format(USER_CONF_PATH))
-        s = Setup()
-        s.make_accounts(user_conf_path=USER_CONF_PATH)
-        
-        with open(FTP_USERS_FILE, "w") as fh:
-            fh.write("\n".join(s.ftp_users))
+            with open(SFTP_USERS_FILE, "w") as fh:
+                fh.write("\n".join(s.sftp_users))
+                
+            with open(LIMITS_CONF_FILE, "w") as fh:
+                fh.write("\n".join(s.limitsconf))
+                
+            if CHANGES_REPORT_FILE != None:
+                with open(CHANGES_REPORT_FILE, "w") as fh:
+                    json.dump(s.changes, fh, indent=4)
             
-        with open(SFTP_USERS_FILE, "w") as fh:
-            fh.write("\n".join(s.sftp_users))
+        else:
+            log("Not setting up users, USER_CONF_PATH={}, but directory does not exist".format(USER_CONF_PATH))
             
-        with open(LIMITS_CONF_FILE, "w") as fh:
-            fh.write("\n".join(s.limitsconf))
-            
-        if CHANGES_REPORT_FILE != None:
-            with open(CHANGES_REPORT_FILE, "w") as fh:
-                json.dump(s.changes, fh, indent=4)
-        
     else:
-        log("Not setting up users, USER_CONF_PATH={}, but directory does not exist".format(USER_CONF_PATH))
-        
-        
-else:
-    log("Not setting up users, USER_CONF_PATH not set")
+        log("Not setting up users, USER_CONF_PATH not set")
             
