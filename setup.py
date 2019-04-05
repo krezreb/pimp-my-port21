@@ -5,7 +5,6 @@ import yaml_ordered as yo
 from subprocess import Popen, PIPE
 from OpenSSL import crypto
 import datetime
-import shutil
 from urlparse import urlparse
 from urllib2 import urlopen
 import socket
@@ -192,11 +191,6 @@ class SetupAccounts(object):
         return re.sub(r"(\/+)", "/", home)
     
     def get_home_and_username(self, username, user_dict, conf):
-        try:
-            home =  user_dict['home']
-        except:
-            home =  username
-        
         prefix = self.get_prefix(conf)
         
         if len(prefix) > 0:
@@ -207,8 +201,13 @@ class SetupAccounts(object):
             except:
                 home = prefix + '/' + username
         
-        if username[-3:] == "_ro":
-            home = home[:-3]
+        else:
+            try:
+                home =  user_dict['home']
+            except:
+                home =  username
+                if username[-3:] == "_ro":
+                    home = home[:-3]
                             
         # http://www.proftpd.org/docs/howto/AuthFiles.html
         # username:password:uid:gid:gecos:homedir:shell
