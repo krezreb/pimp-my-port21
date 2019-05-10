@@ -14,7 +14,7 @@ import argparse
 import re
 
 # FTP stuff
-CHANGES_REPORT_FILE = os.environ.get('CHANGES_REPORT_FILE', None)
+ACCOUNTS_REPORT_FILE = os.environ.get('ACCOUNTS_REPORT_FILE', None)
 USER_CONF_PATH = os.environ.get('USER_CONF_PATH', None)
 LIMITS_CONF_FILE = os.environ.get('LIMITS_CONF_FILE', '/etc/proftpd/conf.d/limits.conf')
 FTP_HOME_PATH = os.environ.get('FTP_HOME_PATH', '/var/proftpd/home')
@@ -160,7 +160,7 @@ class SetupAccounts(object):
         self.ftp_users = []
         self.sftp_users = []
         self.limitsconf = []
-        self.changes = []
+        self.accounts = []
     
     def random_string(self, length=32):
         return ''.join(random.choice(string.ascii_lowercase + string.ascii_uppercase + string.digits) for _ in range(length))
@@ -324,7 +324,9 @@ class SetupAccounts(object):
                         if 'ftp' in protocols:
                             log("Authing user {} for ftp using their password".format(username))
                             self.ftp_users.append(user_line)
-                                                    
+                        
+                        
+                           
                         if 'sftp' in protocols:
                             
                             if authorized_keys != None:
@@ -367,30 +369,32 @@ class SetupAccounts(object):
                             except:
                                 pass
                         
-                        if isnew:
-                            readonly_user = False
-            
-                            if raw_username[-3:] == "_ro":
-                                readonly_user = True
-                                
-                            change = {
-                                "prefix" : self.get_prefix(conf),
-                                "username" : username,
-                                "readonly_user" : readonly_user,
-                                "protocols" : protocols,
-                            }
+                        readonly_user = False
+        
+                        if raw_username[-3:] == "_ro":
+                            readonly_user = True
                             
-                            change["password"] = password
-                                
-                            if 'sftp' in protocols and authorized_keys != None:
-                                change["authorized_keys"] = authorized_keys
+                        account = {
+                            "prefix" : self.get_prefix(conf),
+                            "username" : username,
+                            "readonly_user" : readonly_user,
+                            "home" : home,
+                            "abs_home": abs_home,
+                            "protocols" : protocols,
+                            "changed" : isnew
+                        }
+                        
+                        account["password"] = password
                             
-                            if authorized_ips != None:
-                                change["authorized_ips"] = authorized_ips
-                            if email != None:
-                                change["email"] = email                               
-                            
-                            self.changes.append(change)
+                        if 'sftp' in protocols and authorized_keys != None:
+                            account["authorized_keys"] = authorized_keys
+                        
+                        if authorized_ips != None:
+                            account["authorized_ips"] = authorized_ips
+                        if email != None:
+                            account["email"] = email                               
+                        
+                        self.accounts.append(account)
         log("Done")
         return (change, fail)
 
@@ -427,9 +431,9 @@ if __name__ == '__main__':
             with open(LIMITS_CONF_FILE, "w") as fh:
                 fh.write("\n".join(s.limitsconf))
                 
-            if CHANGES_REPORT_FILE != None:
-                with open(CHANGES_REPORT_FILE, "w") as fh:
-                    json.dump(s.changes, fh, indent=4)
+            if ACCOUNTS_REPORT_FILE != None:
+                with open(ACCOUNTS_REPORT_FILE, "w") as fh:
+                    json.dump(s.accounts, fh, indent=4)
             
         else:
             log("Not setting up users, USER_CONF_PATH={}, but directory does not exist".format(USER_CONF_PATH))
