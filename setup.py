@@ -404,17 +404,22 @@ if __name__ == '__main__':
     cert_file = SSL_CERT_PATH + '/cert.pem'
     s = SetupSSL(fqdn=SSL_CERT_FQDN)
 
-    if SSL_CERT_FQDN != None:
+    if SSL_CERT_SELF_SIGNED:
+        if not os.path.isfile(cert_file):
+            if not os.path.isdir(SSL_CERT_PATH):
+                os.makedirs(SSL_CERT_PATH)
+        
+            log('INFO: Generating self-signed ssl certificate')
+            cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
+            cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN={}' ".format(SSL_CERT_FQDN)
+            run(cmd)
+        else:
+            log('INFO: self-signed ssl certificate already exists')
+            
+        
+    elif SSL_CERT_FQDN != None:
         (change, fail) = s.get_le_cert(cert_file, cert_email=SSL_CERT_EMAIL, expire_cutoff_days=CERT_EXPIRE_CUTOFF_DAYS, acme_cert_http_port=args.port)
                     
-    elif not os.path.isfile(cert_file) and SSL_CERT_SELF_SIGNED:
-        if not os.path.isdir(SSL_CERT_PATH):
-            os.makedirs(SSL_CERT_PATH)
-        
-        log('INFO: Generating self-signed ssl certificate')
-        cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
-        cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN=example.com' "
-        run(cmd)
         
     if USER_CONF_PATH != None:
         if os.path.isdir(USER_CONF_PATH):
