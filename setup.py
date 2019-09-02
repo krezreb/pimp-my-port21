@@ -30,6 +30,7 @@ SSL_CERT_EMAIL = os.environ.get('SSL_CERT_EMAIL', None)
 SSL_CERT_FQDN = os.environ.get('SSL_CERT_FQDN', None)
 SSL_CERT_PATH = os.environ.get('SSL_CERT_PATH', '/var/ssl/domain')
 SSL_CERT_SELF_SIGNED = os.environ.get('SSL_CERT_SELF_SIGNED', 'false').lower() in ["true", "on", "1", "yes"]
+SSL_CERT_SELF_SIGNED_LIFESPAN_DAYS = os.environ.get('SSL_CERT_SELF_SIGNED_LIFESPAN_DAYS', 90)
 CERT_EXPIRE_CUTOFF_DAYS = int(os.environ.get('CERT_EXPIRE_CUTOFF_DAYS', 31))
 
 parser = argparse.ArgumentParser()
@@ -405,12 +406,25 @@ if __name__ == '__main__':
     s = SetupSSL(fqdn=SSL_CERT_FQDN)
 
     if SSL_CERT_SELF_SIGNED:
+        if os.path.isfile(cert_file):
+            # cert already exists
+            cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(cert_file).read())
+            exp = datetime.datetime.strptime(cert.get_notAfter(), '%Y%m%d%H%M%SZ')
+            
+            expires_in = exp - datetime.datetime.utcnow()
+
+            log('cert_file {} found, expires in {} days'.format(cert_file, expires_in.days))
+
+            if expires_in.days < expire_cutoff_days:
+                log('deleting cert_file')
+                os.path.unlink(cert_file)
+        
         if not os.path.isfile(cert_file):
             if not os.path.isdir(SSL_CERT_PATH):
                 os.makedirs(SSL_CERT_PATH)
         
             log('INFO: Generating self-signed ssl certificate')
-            cmd = "openssl req -nodes -new -x509 -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_PATH, SSL_CERT_PATH)
+            cmd = "openssl req -nodes -new -x509 -days {} -keyout {}/privkey.pem -out {}/cert.pem".format(SSL_CERT_SELF_SIGNED_LIFESPAN_DAYS, SSL_CERT_PATH, SSL_CERT_PATH)
             cmd += " -subj '/C=GB/ST=London/L=London/O=Global Security/OU=IT Department/CN={}' ".format(SSL_CERT_FQDN)
             run(cmd)
         else:
