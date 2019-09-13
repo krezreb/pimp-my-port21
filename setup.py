@@ -24,6 +24,10 @@ USER_KEYS_PATH = os.environ.get('USER_KEYS_PATH', '/var/proftpd/authorized_keys'
 PASSWORD_STORE_PATH = os.environ.get('PASSWORD_STORE_PATH', '/var/proftpd/passwords')
 PASSWORD_MIN_LENGTH = int(os.environ.get('PASSWORD_MIN_LENGTH', 10))
 
+# optional default email to send account notifications to if none defined on conf or account level
+ACCOUNT_DEFAULT_EMAIL = os.environ.get('ACCOUNT_DEFAULT_EMAIL', None)
+
+
 # SSL cert stuff
 ACME_CERT_PORT = os.environ.get('ACME_CERT_PORT', '80')
 SSL_CERT_EMAIL = os.environ.get('SSL_CERT_EMAIL', None)
@@ -360,7 +364,7 @@ class SetupAccounts(object):
                                 self.limitsconf.append("Allow from {}\n".format(ip))
                             self.limitsconf.append("DenyAll\n</Limit>\n</IfUser>\n")
             
-                        email = None
+                        email = ACCOUNT_DEFAULT_EMAIL
                         
                         try:
                             email = u['email']
