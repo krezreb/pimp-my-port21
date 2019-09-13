@@ -280,9 +280,16 @@ class SetupAccounts(object):
                             log("Password provided for user {} is less than the minimum {} characters, skipping".format(username, PASSWORD_MIN_LENGTH))
                             continue
                         
-                        protocols = []
+                        try:
+                            # define protocols on yaml file level
+                            protocols = conf['protocols']
+                        except KeyError:
+                            # if not on file level, blank slate
+                            protocols = []
+                            
                         if u != None:
                             try:
+                                # protocol on account level
                                 protocols = u['protocols']
                             except KeyError:
                                 pass
