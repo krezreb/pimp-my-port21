@@ -3,6 +3,9 @@ docker_push_proftpd:
 	docker push jbeeson/proftpd-slim
 
 
+build_proftpd:
+	docker build . -t jbeeson/proftpd-slim -f Dockerfile-proftpd-alpine-source
+
 build_admin:
 	docker build . -t jbeeson/proftpd-admin -f Dockerfile-admin
 

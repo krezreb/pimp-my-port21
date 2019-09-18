@@ -28,7 +28,7 @@ RUN set -x \
     && sed -i 's/__mempcpy/mempcpy/g' lib/pr_fnmatch.c \
     && ./configure \
     --enable-ctrls --enable-openssl --enable-quotatab --enable-nls \
-    --with-modules=mod_tls:mod_quotatab:mod_quotatab_file:mod_ifsession:mod_ban:mod_sftp --enable-nls \
+    --with-modules=mod_tls:mod_quotatab:mod_quotatab_file:mod_ifsession:mod_ban:mod_sftp:mod_deflate --enable-nls \
     && make \
     && cd /usr/local/proftpd && make install \
     && make clean \
@@ -60,5 +60,7 @@ ENV FTPS_REQUIRED=TRUE
 ENV FTP_HOME_PATH=/var/proftpd/home
 ENV FTP_USERS_FILE=/var/proftpd/ftpusers
 ENV SFTP_USERS_FILE=/var/proftpd/sftpusers
+ENV ENABLE_FTP_DEFLATE=TRUE
+ENV ENABLE_SFTP_COMPRESSION=TRUE
 
 CMD ["/run_proftpd.sh"]
