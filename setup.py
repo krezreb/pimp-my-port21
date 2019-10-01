@@ -386,17 +386,25 @@ class SetupAccounts(object):
                         if raw_username[-3:] == "_ro":
                             readonly_user = True
                             
-                        account = {
-                            "prefix" : self.get_prefix(conf),
-                            "username" : username,
-                            "readonly_user" : readonly_user,
-                            "home" : home,
-                            "abs_home": abs_home,
-                            "protocols" : protocols,
-                            "changed" : isnew
-                        }
-                        
+                        '''
+                        by default we init the account dict
+                        with "u" so that any custom attributes are
+                        passed along
+                        '''
+                        if u is None:
+                            account = {}
+                        else:
+                            account = u
+                                       
+                        account["prefix"] = self.get_prefix(conf)
+                        account["username"] = username
+                        account["readonly_user"] = readonly_user
+                        account["home"] = home
+                        account["abs_home"]= abs_home
+                        account["protocols"] = protocols
+                        account["changed"] = isnew
                         account["password"] = password
+                        
                             
                         if 'sftp' in protocols and authorized_keys != None:
                             account["authorized_keys"] = authorized_keys
