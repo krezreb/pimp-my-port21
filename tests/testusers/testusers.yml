@@ -1,0 +1,25 @@
+user_prefix: user
+email: you@example.com
+
+users:
+    # custom attrs
+    test1:
+      archive_threshold: "30d"
+      archive_format: "%Y-%m"
+      archive_dirs:
+        - subdir1
+        - subdir2
+        
+    # empty dict
+    test0: 
+    
+    # home_subdir
+    test2: 
+      home_subdir: "lolcats"
+      
+    # readonly
+    test2_ro: 
+    
+    # shared home
+    test3: 
+      home: test1

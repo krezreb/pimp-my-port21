@@ -1,0 +1,8 @@
+email: you@example
+
+users:
+    toplevel_ro:
+        protocols:
+              - sftp
+              - ftp
+        home: /
