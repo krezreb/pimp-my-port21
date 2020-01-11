@@ -7,6 +7,8 @@ ENV PROFTPD_VERSION 1.3.6c
 RUN apk update \
     && apk add --no-cache --virtual .persistent-deps \
       ca-certificates \
+      libressl3.0-libssl \
+      libressl3.0-libcrypto \
       curl \
       gettext \
       bash \
