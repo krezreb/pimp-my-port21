@@ -2,8 +2,6 @@ FROM alpine:3.11.2
 
 ENV TERM=xterm
 
-ENV PROFTPD_VERSION 1.3.6c
-
 RUN apk update \
     && apk add --no-cache --virtual .persistent-deps \
       ca-certificates \
@@ -18,11 +16,11 @@ RUN apk update \
       libressl-dev \
       zlib-dev
 
+ARG PROFTPD_VERSION=1.3.6c
+
 # we use the latest commit from branch 1.3.6 to get the fix for LibreSSL 2.9.x
 # https://github.com/proftpd/proftpd/issues/810
-RUN git clone -b 1.3.6 https://github.com/proftpd/proftpd.git \
-    && cd proftpd \
-    && git reset fa4c0ac64cb048ae114beab08fb2ac9abc61b58a --hard
+RUN git clone -b ${PROFTPD_VERSION} --depth 1 https://github.com/proftpd/proftpd.git
 
 ## Note: use the ftp archive when 1.3.6c is released
 # RUN curl -fSL ftp://ftp.proftpd.org/distrib/source/proftpd-${PROFTPD_VERSION}.tar.gz -o proftpd.tgz \
